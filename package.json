@@ -4,9 +4,10 @@
   "description": "",
   "main": "dist/main.js",
   "scripts": {
+    "setup": "docker build -t zet-sandbox-image ./docker-sandbox",
     "build": "tsc",
     "start": "node dist/main.js",
-    "dev": "tsc && node dist/main.js",
+    "dev": "npm run build && npm start",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

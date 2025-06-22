@@ -36,21 +36,26 @@ The `sandbox` directory in the project root is mounted into the Docker container
     npm install
     ```
 
-2.  **Compile TypeScript:**
+2.  **Build the Sandbox Environment (one-time setup):**
+    This command builds a custom Docker image that will serve as the isolated OS for the AI.
     ```bash
-    npx tsc
+    npm run setup
     ```
-
-3.  **Create the sandbox directory:**
-    This directory will be shared with the Docker container.
+    
+3.  **Compile TypeScript:**
+    This is only needed if you don't use the `dev` or `start` scripts.
     ```bash
-    mkdir sandbox
+    npm run build
     ```
 
 ### Execution
 
-Run the compiled application:
+Run the application using one of the following commands:
 
 ```bash
-node dist/main.js
-``` 
+# Compile and run
+npm run dev
+
+# Or just run the compiled code
+npm start
+```

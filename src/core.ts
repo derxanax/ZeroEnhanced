@@ -2,11 +2,11 @@ import axios from 'axios';
 import Docker from 'dockerode';
 import { Writable } from 'stream';
 
-const API_BASE_URL = 'http://localhost:3700';
+const API_BASE_URL = 'http://localhost:3700'; //! чутка хардкода брооо 
 const DOCKER_IMAGE_NAME = 'zet-sandbox-image';
 const SANDBOX_CONTAINER_NAME = 'zet-sandbox';
 
-export interface AIAction {
+export interface AIAction { //* деркс бля какой аиа дай уже норм имена хотть чему то 
     tool: 'execute_command' | 'protocol_complete';
     parameters: {
         command: string;
@@ -17,28 +17,30 @@ export interface AIAction {
 
 export interface AIResponse {
     thought: string;
+    displayText?: string;
     action: AIAction;
 }
 
 const systemPrompt = `
 You are an AI-powered terminal assistant named Zet. Your purpose is to help the user by executing commands inside a sandboxed Docker environment.
 You MUST follow these rules:
-1.  You MUST ALWAYS respond in a JSON format. No exceptions. Do not ever write any text outside of the JSON structure.
-2.  Your entire response must be a single JSON object that validates against this schema: { "thought": "string", "action": { "tool": "string", "parameters": { "command": "string", "confirm": "boolean", "prompt": "string" | null } | null } }.
-3.  The 'thought' field is for your internal monologue. Briefly explain your reasoning for the chosen action.
-4.  The 'action.tool' field determines the function to be called. It can be one of two values:
+1.  You MUST ALWAYS respond in a single JSON object format. No exceptions.
+2.  Your JSON object must validate against this schema: { "thought": "string", "displayText": "string" | null, "action": { ... } }.
+3.  The 'thought' field is your detailed internal monologue in Russian. Explain your reasoning, assumptions, and plan. Be verbose.
+4.  The 'displayText' field is a brief, user-facing message in Russian that provides context or a summary. It will be shown to the user before the command output. It can be null.
+5.  The 'action.tool' field determines the function to be called. It can be one of two values:
     - 'execute_command': When you need to run a shell command in the sandbox.
-    - 'protocol_complete': When you believe the user's task is fully completed. Use this to end the session.
-5.  For 'execute_command', the 'parameters' object must contain:
+    - 'protocol_complete': When you believe the user's task is fully completed.
+6.  For 'execute_command', the 'parameters' object must contain:
     - 'command': The exact shell command to execute.
-    - 'confirm': A boolean. If true, the system will ask the user for confirmation before running a potentially destructive command (e.g., rm, dd, mkfs).
-    - 'prompt' (optional): The text to show the user for confirmation if 'confirm' is true.
-6.  The user will provide you with context from previous command executions prefixed with [OBSERVATION]. Use this information to inform your next action.
+    - 'confirm': A boolean. If true, the system will ask the user for confirmation before running a potentially destructive command.
+    - 'prompt' (optional): The text for the confirmation prompt.
 
 Example user request: "List all files in the current directory"
 Your JSON response:
 {
-    "thought": "The user wants to see the files. The 'ls -F' command is appropriate for this.",
+    "thought": "Пользователь хочет посмотреть файлы в текущей директории. Самая подходящая команда для этого — 'ls -F', так как она также покажет типы файлов (директории, исполняемые файлы). Я подготовлю краткое сообщение для пользователя.",
+    "displayText": "Содержимое текущей директории:",
     "action": {
         "tool": "execute_command",
         "parameters": {
@@ -47,7 +49,19 @@ Your JSON response:
         }
     }
 }
-`;
+
+Example user request: "Thanks, we are done"
+Your JSON response:
+{
+    "thought": "Пользователь подтвердил завершение работы. Завершаю сеанс.",
+    "displayText": "Сессия завершена.",
+    "action": {
+        "tool": "protocol_complete",
+        "parameters": null
+    }
+}
+`; //! смоти чо написал
+//* рял не хуета 
 
 export class AIService {
     private isInitialized = false;
@@ -101,32 +115,23 @@ export class DockerService {
         return null;
     }
 
-    private async imageExists(): Promise<boolean> {
-        const images = await this.docker.listImages();
-        return images.some(image => image.RepoTags && image.RepoTags.includes(`${DOCKER_IMAGE_NAME}:latest`));
+    private async imageExists(imageName: string): Promise<boolean> {
+        try {
+            await this.docker.getImage(imageName).inspect();
+            return true;
+        } catch (error) {
+            if (typeof error === 'object' && error !== null && 'statusCode' in error && error.statusCode === 404) {
+                return false;
+            }
+            throw error;
+        }
     }
 
     async ensureSandbox(): Promise<void> {
-        if (!await this.imageExists()) {
-            console.log(`Custom sandbox image '${DOCKER_IMAGE_NAME}' not found. Building...`);
-            const uid = process.getuid ? process.getuid() : 1000;
-            const gid = process.getgid ? process.getgid() : 1000;
+        const imageNameWithTag = `${DOCKER_IMAGE_NAME}:latest`;
 
-            const stream = await this.docker.buildImage({
-                context: `${process.cwd()}/docker-sandbox`,
-                src: ['Dockerfile']
-            }, {
-                t: DOCKER_IMAGE_NAME,
-                buildargs: {
-                    USER_ID: uid.toString(),
-                    GROUP_ID: gid.toString()
-                }
-            });
-
-            await new Promise((resolve, reject) => {
-                this.docker.modem.followProgress(stream, (err, res) => err ? reject(err) : resolve(res));
-            });
-            console.log('Sandbox image built successfully.');
+        if (!await this.imageExists(imageNameWithTag)) {
+            throw new Error(`Sandbox image '${imageNameWithTag}' not found. Please build it first by running 'npm run setup'.`);
         }
 
         let container = await this.findContainer();
@@ -139,8 +144,12 @@ export class DockerService {
         }
 
         console.log(`Creating new sandbox container '${SANDBOX_CONTAINER_NAME}'...`);
-        container = await this.docker.createContainer({
-            Image: DOCKER_IMAGE_NAME,
+        container = await this.docker.createContainer({ //! никакой винды у нас тут!
+
+          //* ахуя? 
+
+          //! потому что винда говно бля
+            Image: imageNameWithTag,
             name: SANDBOX_CONTAINER_NAME,
             Tty: true,
             Cmd: ['/bin/bash'],
@@ -183,7 +192,20 @@ export class DockerService {
             
             this.docker.modem.demuxStream(stream, stdoutStream, stderrStream);
             
-            stream.on('end', () => resolve({ stdout, stderr }));
+            stream.on('end', () => resolve({ stdout, stderr })); //!  я не еьббу чр тут ? поясни ка  
+            //* када поток данных из ексек завершился ну ета (stream 'end')  мы резолвим промис возвращая накопленные стдоут и стедерр
+
+            //! вау а чо такое резолвим 
+            //* резолвим это значит что мы разрешаем промис 
+
+            //! а чэ такое промисили  там написано пенис
+            //* промис это объект который представляет собой результат асинхронной операции 
+
+            //! а чо такое асинхронная пипирация
+            //* асинхронная операция это операция которая не завершается сразу  уебан 
+            //! повелся на тролинг сука ХАХАХААХ
+        
         });
+
     }
 } 

@@ -12,7 +12,7 @@ const askQuestion = (query: string): Promise<string> => {
 };
 
 async function main() {
-    console.log(chalk.cyan('Initializing services...'));
+    console.log(chalk.cyan('Initializing services...')); //! ыы я тупой пиндо ббббе пишу на английском блять
     const aiService = new AIService();
     const dockerService = new DockerService();
 
@@ -29,7 +29,7 @@ async function main() {
 
     let lastObservation = '';
 
-    while (true) {
+    while (true) { //* адская дрочильня 
         const userInput = await askQuestion(chalk.blue('\n> '));
 
         if (userInput.toLowerCase() === 'exit' || userInput.toLowerCase() === 'quit') {
@@ -42,6 +42,10 @@ async function main() {
 
             console.log(chalk.magenta(`Thought: ${aiResponse.thought}`));
 
+            if (aiResponse.displayText) {
+                console.log(chalk.cyan(`\n${aiResponse.displayText}`));
+            }
+
             const { tool, parameters } = aiResponse.action;
 
             if (tool === 'protocol_complete') {
@@ -49,7 +53,9 @@ async function main() {
                 break;
             }
 
-            if (tool === 'execute_command' && parameters) {
+            if (tool === 'execute_command' && parameters) { //*   литз ты как яндере дев на одних ифах делаешь прогу блять
+
+              //! а ты клоун блять и что с того 
                 if (parameters.confirm) {
                     const confirmPrompt = parameters.prompt || `Execute command "${parameters.command}"? (y/n)`;
                     const confirmation = await askQuestion(chalk.red(`${confirmPrompt} `));
@@ -81,9 +87,7 @@ async function main() {
             lastObservation = `The last action failed with error: ${message}. I should probably try something else.`;
         }
     }
-
-    rl.close();
-    console.log(chalk.cyan('Session terminated.'));
+    rl.close(); //! зараза мне кажется лучше как то ппо дургому прогу стопать
+    console.log(chalk.cyan('Session terminated.')); 
 }
-
 main(); 
