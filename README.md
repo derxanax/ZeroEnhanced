@@ -1,61 +1,84 @@
-# ZeroEnhanced Terminal (Zet)
+<div align="center">
+  <img src="ZET.png" alt="Zet Terminal in Action" width="700"/>
+  <h1>Zet: Your Conversational DevOps Agent</h1>
+  <p><strong>Stop memorizing commands. Start having conversations with your terminal.</strong></p>
+  <p>
+    <a href="#"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"></a>
+    <a href="#"><img src="https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js"></a>
+    <a href="#"><img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"></a>
+  </p>
+</div>
 
-Zet is an experimental AI-powered terminal that uses a Large Language Model (Qwen) to translate natural language into shell commands, which are then executed in an isolated Docker sandbox.
+---
 
-## Architecture
+## 🤔 Why Zet?
 
-The application consists of two main components:
+In a world of complex CLIs and endless flags, Zet offers a revolutionary alternative: a direct conversation with a `root`-powered agent in a secure, isolated environment. It's not just about running one command; it's about accomplishing tasks.
 
-1.  `src/core.ts`: The brain of the application. It contains all the core logic:
-    *   **Configuration**: API endpoints, Docker image names.
-    *   **TypeScript Types**: Defines the strict JSON contract for AI responses.
-    *   **System Prompt**: A detailed instruction set that tells the AI how to behave and what format to respond in.
-    *   **AIService**: A class responsible for communicating with the Qwen API (creating new chat sessions, sending prompts).
-    *   **DockerService**: A class for managing the lifecycle of a sandboxed Docker container (`ubuntu:latest`). It ensures the container exists, is running, and executes commands within it.
+| Feature                 | Description                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------- |
+| 💬 **Natural Language** | Just tell Zet what you want to do. "Download python, unzip it, and add it to the path." Done.            |
+| 🛡️ **Safe by Default** | Every command runs in a sandboxed `ubuntu:24.04` container. Your host OS is always safe.                |
+| 🧠 **Transparent AI**   | Zet shows you its `thought` process, explaining *why* it chose a particular command before it runs.       |
+|  empowered **Root on Demand**      | The agent has `root` access inside its sandbox, allowing it to install packages and manage services. |
 
-2.  `src/main.ts`: The orchestrator. This file is responsible for:
-    *   Initializing the services.
-    *   Running the main application loop (Read-Eval-Print Loop).
-    *   Handling user input and output formatting (with `chalk`).
-    *   Managing the conversation flow, including asking for user confirmation for potentially destructive commands.
+## 🚀 How It Works
 
-The `sandbox` directory in the project root is mounted into the Docker container at `/workspace`, allowing the AI to interact with files.
+Zet operates in a simple, powerful loop:
 
-## How to Run
+1.  **You:** Provide a task in plain English.
+2.  **Zet (AI):** Analyzes your request, forms a plan, and translates it into a precise shell command.
+3.  **Zet (Executor):** Runs the command inside the secure Docker sandbox.
+4.  **You:** See the output and continue the conversation.
 
-### Prerequisites
+## ⚡️ Getting Started
 
-*   Node.js (v16 or higher)
-*   Docker installed and running.
-*   The Kiala API (the wrapper for Qwen) running on `http://localhost:3700`.
+> **Prerequisites:** You'll need [Node.js](https://nodejs.org/) (v18+), [Docker](https://www.docker.com/), and the [Kiala API](https://github.com/derxanax/Kiala-api-qwen) running locally.
 
-### Setup
+### 1. Setup Environment
 
-1.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
-
-2.  **Build the Sandbox Environment (one-time setup):**
-    This command builds a custom Docker image that will serve as the isolated OS for the AI.
-    ```bash
-    npm run setup
-    ```
-    
-3.  **Compile TypeScript:**
-    This is only needed if you don't use the `dev` or `start` scripts.
-    ```bash
-    npm run build
-    ```
-
-### Execution
-
-Run the application using one of the following commands:
+Clone the repo, install dependencies, and run the one-time setup script to build the sandbox.
 
 ```bash
-# Compile and run
-npm run dev
+# Clone the project
+git clone https://github.com/derxanax/ZeroEnhanced.git
+cd ZeroEnhanced
 
-# Or just run the compiled code
-npm start
+# Install Node.js modules
+npm install
+
+# Build the Docker sandbox (one-time command)
+npm run setup
 ```
+
+### 2. Run Zet
+
+Launch the agent and start giving it tasks.
+
+```bash
+npm run dev
+```
+
+> **Note:** A `/sandbox` directory is automatically created and shared with the Docker container, allowing for easy file exchange.
+
+## 🛣️ What's Next?
+
+Zet is an evolving platform. Here's where we're headed:
+
+- [ ] **Multi-Step Execution:** Autonomous execution of complex, multi-command workflows.
+- [ ] **Web & File Operations:** Native tools for interacting with APIs and the filesystem.
+- [ ] **Persistent State:** Giving the sandbox memory and state that persists between sessions.
+- [ ] **A GUI:** A dedicated graphical interface for managing Zet agents and their environments.
+
+---
+<p align="center">Made with ❤️ by derx and ZAEAZAEX.</p>
+
+## Автор
+
+👤 **Саша (zarazaex)**  
+Telegram: [@zarazaex](https://t.me/zarazaex)
+
+👤 **Derx / lyzt** 
+Telegram: [@amyluutz](https://t.me/amyluutz)
+
+Mail: derx@derx.space
