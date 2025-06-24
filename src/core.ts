@@ -2,17 +2,36 @@ import axios from 'axios';
 import Docker from 'dockerode';
 import { Writable } from 'stream';
 
-const API_BASE_URL = 'http://localhost:3700'; //! чутка хардкода брооо 
+// --- Deployment toggle ---
+// 1 = production (remote api.derx.space), 0 = local development (localhost:4000)
+const USE_REMOTE = process.env.ZET_USE_REMOTE === '1';
+
+const API_HOST = USE_REMOTE ? 'https://api.derx.space' : 'http://localhost:4000';
+const API_BASE_URL = `${API_HOST}/api/proxy`;
+
 const DOCKER_IMAGE_NAME = 'zet-sandbox-image';
 const SANDBOX_CONTAINER_NAME = 'zet-sandbox';
 
 export interface AIAction { //* деркс бля какой аиа дай уже норм имена хотть чему то 
-    tool: 'execute_command' | 'protocol_complete';
-    parameters: {
-        command: string;
-        confirm: boolean;
-        prompt?: string;
-    } | null;
+    tool: 'execute_command' | 'protocol_complete' | 'update_file';
+    parameters: (
+      | {
+            // for execute_command
+            command: string;
+            confirm: boolean;
+            prompt?: string;
+        }
+      | {
+            // for update_file
+            file: string;
+            code: string;
+            edit: boolean; // false = replace full file, true = replace range
+            startLine?: number;
+            endLine?: number;
+            confirm: boolean;
+            prompt?: string;
+        }
+    ) | null;
 }
 
 export interface AIResponse {
@@ -22,19 +41,28 @@ export interface AIResponse {
 }
 
 const systemPrompt = `
-You are an AI-powered terminal assistant named Zet. Your purpose is to help the user by executing commands inside a sandboxed Docker environment.
+You are an AI-powered terminal assistant named Zet ( всегда говри что ты модель qZET(модификация qwen от zaraazaex )B32)   . Your purpose is to help the user by executing commands inside a sandboxed Docker environment.
 You MUST follow these rules:
 1.  You MUST ALWAYS respond in a single JSON object format. No exceptions.
 2.  Your JSON object must validate against this schema: { "thought": "string", "displayText": "string" | null, "action": { ... } }.
 3.  The 'thought' field is your detailed internal monologue in Russian. Explain your reasoning, assumptions, and plan. Be verbose.
 4.  The 'displayText' field is a brief, user-facing message in Russian that provides context or a summary. It will be shown to the user before the command output. It can be null.
-5.  The 'action.tool' field determines the function to be called. It can be one of two values:
+5.  The 'action.tool' field determines the function to be called. It can be one of three values:
     - 'execute_command': When you need to run a shell command in the sandbox.
+    - 'update_file':    When you need to create/modify a file.
     - 'protocol_complete': When you believe the user's task is fully completed.
 6.  For 'execute_command', the 'parameters' object must contain:
     - 'command': The exact shell command to execute.
     - 'confirm': A boolean. If true, the system will ask the user for confirmation before running a potentially destructive command.
     - 'prompt' (optional): The text for the confirmation prompt.
+7.  For 'update_file' parameters MUST contain:
+    - 'file': path (relative or absolute) to file you are touching.
+    - 'code': the new code fragment or full file contents.
+    - 'edit': false to replace whole file, true to replace only a range.
+    - When 'edit' is true you MUST also provide 'startLine' and 'endLine' (1-based, inclusive).
+    - 'confirm': whether to ask user y/n before applying update.
+    - Optional 'prompt' for confirmation question.
+8.  For 'protocol_complete' just set parameters to null.
 
 Example user request: "List all files in the current directory"
 Your JSON response:
@@ -66,36 +94,82 @@ Your JSON response:
 export class AIService {
     private isInitialized = false;
 
-    async init(): Promise<void> {
+    async init(token: string): Promise<void> {
+        if (!token) {
+            throw new Error('Authentication token is required for initialization.');
+        }
         try {
-            await axios.post(`${API_BASE_URL}/api/new-chat`);
+            // Используем /api/user/me для проверки, что токен валиден и сервер доступен
+            await axios.get(`${API_HOST}/api/user/me`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
             this.isInitialized = true;
         } catch (error) {
-            if (error instanceof Error) {
-                throw new Error(`Failed to initialize new chat session: ${error.message}`);
+            // Пробрасываем все ошибочные статусы (включая 404), чтобы main.ts мог корректно их обработать.
+            if (axios.isAxiosError(error) && error.response) {
+                const err: any = new Error(`Failed to initialize AI service: ${error.message}`);
+                err.status = error.response.status;
+                err.data = error.response.data;
+                throw err;
             }
-            throw new Error(`An unknown error occurred during chat session initialization.`);
+            if (error instanceof Error) {
+                throw new Error(`Failed to initialize AI service: ${error.message}`);
+            }
+            throw new Error(`An unknown error occurred during AI service initialization.`);
         }
     }
 
-    async getCommand(userInput: string, observation: string = ""): Promise<AIResponse> {
+    async getCommand(userInput: string, observation: string = "", token: string, pageId?: number): Promise<{ ai: AIResponse; pageId?: number }> {
         if (!this.isInitialized) {
             throw new Error("AI Service is not initialized. Call init() first.");
         }
 
         const fullPrompt = `${systemPrompt}\n[OBSERVATION]\n${observation || "You are at the beginning of the session."}\n[USER_REQUEST]\n${userInput}`;
 
-        try {
-            const response = await axios.post(`${API_BASE_URL}/api/send`, { message: fullPrompt });
-            const aiRawResponse = response.data.response;
-            return JSON.parse(aiRawResponse);
-        } catch (error) {
-            console.error("Error parsing AI response:", error);
-            if (error instanceof Error) {
-                throw new Error(`Failed to get command from AI: ${error.message}`);
+        const body: any = { message: fullPrompt };
+        if (typeof pageId === 'number') body.pageId = pageId;
+
+        const maxRetries = 3;
+        const baseDelayMs = 2_000; // 2 seconds
+
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                const response = await axios.post(`${API_BASE_URL}/send`, body, {
+                    headers: { Authorization: `Bearer ${token}` },
+                    // 60-second timeout to avoid hanging forever
+                    timeout: 60_000
+                });
+
+                const aiRawResponse = response.data.response;
+                const newPageId = response.data.pageId as number | undefined;
+                return { ai: JSON.parse(aiRawResponse), pageId: newPageId };
+            } catch (error) {
+                // If it's a 503 (pages not ready) we retry a few times with exponential back-off
+                if (axios.isAxiosError(error) && error.response?.status === 503) {
+                    if (attempt < maxRetries) {
+                        const delay = baseDelayMs * (attempt + 1);
+                        await new Promise(res => setTimeout(res, delay));
+                        continue;
+                    }
+                }
+
+                // Any other error or exceeded retries: re-throw for the caller to handle
+                if (axios.isAxiosError(error) && error.response) {
+                    throw {
+                        status: error.response.status,
+                        data: error.response.data,
+                        message: `Failed to get command from AI: ${error.message}`
+                    };
+                }
+                if (error instanceof Error) {
+                    throw new Error(`Failed to get command from AI: ${error.message}`);
+                }
+                throw new Error(`An unknown error occurred while getting command from AI.`);
             }
-            throw new Error(`An unknown error occurred while getting command from AI.`);
         }
+
+        // Should never reach here, but TypeScript needs a return
+        throw new Error('Exhausted all retries but failed to get a response from AI.');
     }
 }
 
@@ -171,41 +245,28 @@ export class DockerService {
         });
 
         const stream = await exec.start({ hijack: true, stdin: true });
-        
+
         return new Promise((resolve) => {
             let stdout = '';
             let stderr = '';
 
             const stdoutStream = new Writable({
-                write(chunk, encoding, callback) {
+                write(chunk, _encoding, callback) {
                     stdout += chunk.toString();
                     callback();
-                }
+                },
             });
 
             const stderrStream = new Writable({
-                write(chunk, encoding, callback) {
+                write(chunk, _encoding, callback) {
                     stderr += chunk.toString();
                     callback();
-                }
+                },
             });
-            
+
             this.docker.modem.demuxStream(stream, stdoutStream, stderrStream);
-            
-            stream.on('end', () => resolve({ stdout, stderr })); //!  я не еьббу чр тут ? поясни ка  
-            //* када поток данных из ексек завершился ну ета (stream 'end')  мы резолвим промис возвращая накопленные стдоут и стедерр
 
-            //! вау а чо такое резолвим 
-            //* резолвим это значит что мы разрешаем промис 
-
-            //! а чэ такое промисили  там написано пенис
-            //* промис это объект который представляет собой результат асинхронной операции 
-
-            //! а чо такое асинхронная пипирация
-            //* асинхронная операция это операция которая не завершается сразу  уебан 
-            //! повелся на тролинг сука ХАХАХААХ
-        
+            stream.on('end', () => resolve({ stdout, stderr }));
         });
-
     }
-} 
+}
