@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="ZET.png" alt="Zet Terminal in Action" width="700"/>
+  <img src="ZET.png" alt="Zet Logi" width="700"/>
   <h1>Zet: Your Conversational DevOps Agent</h1>
   <p><strong>Stop memorizing commands. Start having conversations with your terminal.</strong></p>
   <p>
