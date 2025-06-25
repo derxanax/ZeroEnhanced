@@ -470,7 +470,4 @@ wss.on('connection', (ws) => {
 });
 
 console.log(`WebSocket server running on ws://localhost:${WS_PORT}`); 
-<<<<<<< Updated upstream
 console.log(`WebSocket server running on ws://localhost:${WS_PORT}`); 
-=======
->>>>>>> Stashed changes
