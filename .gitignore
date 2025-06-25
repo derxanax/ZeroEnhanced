@@ -156,3 +156,4 @@ neutralino.log
 # Temporary files
 */.tpm
 .tpm
+/build/
