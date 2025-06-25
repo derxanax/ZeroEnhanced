@@ -1,12 +1,12 @@
 <div align="center">
-  <img src="ZET.png" alt="Zet Logo" width="700"/>
+  <img src="asset/ZET.png" alt="Zet Logo" width="700"/>
   
   <!-- Language Selection -->
   <p>
     <strong>🇷🇺 Русский</strong> | 
-    <a href="README_EN.md">🇺🇸 English</a> | 
-    <a href="README_CN.md">🇨🇳 中文</a> | 
-    <a href="README_DE.md">🇩🇪 Deutsch</a>
+    <a href="translate/README_EN.md">🇺🇸 English</a> | 
+    <a href="translate/README_CN.md">🇨🇳 中文</a> | 
+    <a href="translate/README_DE.md">🇩🇪 Deutsch</a>
   </p>
   
   <h1>ZetGui: Ваш ИИ-терминал и IDE</h1>
@@ -45,42 +45,41 @@ ZetGui работает в простом, но мощном цикле:
 
 > **Требования:** [Node.js](https://nodejs.org/) (v18+), [Docker](https://www.docker.com/), и [Kiala API](https://github.com/derxanax/Kiala-api-qwen) запущенный локально.
 
-### 1. Настройка окружения
+### 🎯 Быстрый запуск (одна команда!)
 
 ```bash
 # Клонируем проект
 git clone https://github.com/derxanax/ZeroEnhanced.git
 cd ZeroEnhanced
 
-# Устанавливаем зависимости
-npm install
-
-# Собираем Docker sandbox (единоразово)
-npm run setup
+# Запускаем главный скрипт управления
+./Zet-Install.sh    # Linux/Mac
+# или
+# .\Zet-Install.ps1  # Windows PowerShell
 ```
 
-### 2. Запуск Backend
+**Главный скрипт предоставляет интерактивное меню:**
+- 📦 Установить все зависимости
+- 🔨 Собрать все компоненты  
+- 🖥️ Запустить CLI версию
+- 🖥️ Запустить Desktop GUI
+- 🌐 Запустить Web версию
+
+### 🛠️ Ручная установка (опционально)
+
+Если предпочитаете ручную установку:
 
 ```bash
-cd backend
-npm install
-npm run dev  # Запускается на localhost:3003
-```
+# Установка зависимостей
+./script/install-all-Dependencies.sh
 
-### 3. Запуск Desktop приложения
+# Сборка компонентов
+./script/build-all.sh
 
-```bash
-cd desktop
-npm install
-npm run dev  # Запускает Neutralino приложение
-```
-
-### 4. Или запуск Web версии
-
-```bash
-cd desktop/react-src
-npm install
-npm start   # Запускается на localhost:3000
+# Запуск конкретной версии
+./script/start-all-cli.sh     # CLI
+./script/start-all-gui.sh     # Desktop GUI  
+./script/start-all-web.sh     # Web версия
 ```
 
 > **Примечание:** Папка `/sandbox` автоматически создается и монтируется в Docker контейнер для обмена файлами.
@@ -89,11 +88,14 @@ npm start   # Запускается на localhost:3000
 
 ```
 ZeroEnhanced/
+├── asset/             # Ресурсы (логотипы, изображения)
 ├── backend/           # Express.js API сервер
 ├── desktop/           # Neutralino desktop приложение
 │   └── react-src/     # React UI компоненты
 ├── docker-sandbox/    # Docker окружение для выполнения команд
-└── src/              # Основная логика (CLI версия)
+├── script/            # Скрипты установки и настройки
+├── src/              # Основная логика (CLI версия)
+└── translate/         # Переводы README на разные языки
 ```
 
 ## 🛣️ Что дальше?

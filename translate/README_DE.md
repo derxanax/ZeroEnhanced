@@ -1,9 +1,9 @@
 <div align="center">
-  <img src="ZET.png" alt="Zet Logo" width="700"/>
+  <img src="../asset/ZET.png" alt="Zet Logo" width="700"/>
   
   <!-- Language Selection -->
   <p>
-    <a href="README.md">🇷🇺 Русский</a> | 
+    <a href="../README.md">🇷🇺 Русский</a> | 
     <a href="README_EN.md">🇺🇸 English</a> | 
     <a href="README_CN.md">🇨🇳 中文</a> | 
     <strong>🇩🇪 Deutsch</strong>

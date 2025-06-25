@@ -467,4 +467,8 @@ wss.on('connection', (ws) => {
   });
 });
 
+<<<<<<< HEAD
 console.log(`WebSocket server running on ws://localhost:${WS_PORT}`); 
+=======
+console.log(`WebSocket server running on ws://localhost:${WS_PORT}`); 
+>>>>>>> 7019bc8 (Обновление проекта ZetGui:)

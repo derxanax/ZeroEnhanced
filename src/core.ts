@@ -12,17 +12,15 @@ const API_BASE_URL = `${API_HOST}/api/proxy`;
 const DOCKER_IMAGE_NAME = 'zet-sandbox-image';
 const SANDBOX_CONTAINER_NAME = 'zet-sandbox';
 
-export interface AIAction { //* деркс бля какой аиа дай уже норм имена хотть чему то 
+export interface AIAction {
     tool: 'execute_command' | 'protocol_complete' | 'update_file';
     parameters: (
       | {
-                //! для выполнения команды
             command: string;
             confirm: boolean;
             prompt?: string;
         }
       | {
-            //* для упд файле
             file: string;
             code: string;
             edit: boolean; 
@@ -88,8 +86,7 @@ Your JSON response:
         "parameters": null
     }
 }
-`; //! смоти чо написал
-//* рял не хуета 
+`; 
 
 export class AIService {
     private isInitialized = false;
@@ -105,7 +102,6 @@ export class AIService {
             });
             this.isInitialized = true;
         } catch (error) {
-            //* ктдаем все ошибочные статусы (включая 404), чтобы еод мог корректно их обработать.
             if (axios.isAxiosError(error) && error.response) {
                 const err: any = new Error(`Failed to initialize AI service: ${error.message}`);
                 err.status = error.response.status;
@@ -143,7 +139,6 @@ export class AIService {
                 const newPageId = response.data.pageId as number | undefined;
                 return { ai: JSON.parse(aiRawResponse), pageId: newPageId };
             } catch (error) {
-                //! если 503 (это было на стааром нестабильном vps сейчас по факту лишний код)
                 if (axios.isAxiosError(error) && error.response?.status === 503) {
                     if (attempt < maxRetries) {
                         const delay = baseDelayMs * (attempt + 1);
@@ -215,11 +210,7 @@ export class DockerService {
         }
 
         console.log(`Creating new sandbox container '${SANDBOX_CONTAINER_NAME}'...`);
-        container = await this.docker.createContainer({ //! никакой винды у нас тут!
-
-          //* ахуя? 
-
-          //! потому что винда говно бля
+        container = await this.docker.createContainer({
             Image: imageNameWithTag,
             name: SANDBOX_CONTAINER_NAME,
             Tty: true,

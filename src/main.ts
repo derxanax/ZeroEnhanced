@@ -66,7 +66,7 @@ const ensureAuthenticated = async (): Promise<string> => {
 
     while (true) {
         const email = await askQuestion(chalk.cyan('Email: '));
-        const password = await askQuestion(chalk.cyan('Password: ')); //! потом скрою пароль ща лень чот
+        const password = await askQuestion(chalk.cyan('Password: ')); // TODO: скрыть пароль
 
         try {
             const loginResp = await axios.post(`${AUTH_API_URL}/login`, { email, password });
@@ -77,7 +77,7 @@ const ensureAuthenticated = async (): Promise<string> => {
             return token;
         } catch (err: any) {
             if (axios.isAxiosError(err) && err.response?.status === 404) {
-                //! Пользователь не найден – предложим зарегистрироваться
+                // Пользователь не найден – предложим зарегистрироваться
                 const answer = await askQuestion(chalk.yellow('User not found. Register new account? (y/n) '));
                 if (answer.toLowerCase() !== 'y') {
                     continue;
@@ -105,8 +105,8 @@ const ensureAuthenticated = async (): Promise<string> => {
 };
 
 async function main() {
- //* для гуи на проде
-        if (process.argv.includes('--beta-gui')) {
+    // для GUI на проде
+    if (process.argv.includes('--beta-gui')) {
         const { spawn } = require('child_process');
         const path = require('path');
         const desktopDir = path.join(__dirname, '..', '..', 'desktop');
@@ -118,7 +118,7 @@ async function main() {
         return; 
     }
 
-    console.log(chalk.cyan('Initializing Zet...')); //! ыы я тупой пиндо ббббе пишу на английском блять
+    console.log(chalk.cyan('Initializing Zet...'));
     
     let authToken = await ensureAuthenticated();
 
@@ -148,7 +148,7 @@ async function main() {
     let lastObservation = '';
     let currentPageId: number | null = null;
 
-    //! бля я ебал даже так ctrl + c лагает оч
+    // обработчик Ctrl+C
     process.on('SIGINT', async () => {
         try {
             if (currentPageId !== null) {
@@ -161,7 +161,7 @@ async function main() {
         }
     });
 
-    while (true) { //* адская дрочильня 
+    while (true) { // основной цикл 
         const countStr = chalk.magenta(`[${remainingRequests ?? '-'}]`);
         const promptStr = `\n${countStr} > `;
         const userInput = await askQuestion(promptStr);
@@ -246,7 +246,7 @@ async function main() {
                         const absPath = path.isAbsolute(targetFile)
                             ? targetFile
                             : path.join(process.cwd(), 'sandbox', targetFile);
-                        //! бля я ебал 
+                        // создаем директорию если не существует
                         fs.mkdirSync(path.dirname(absPath), { recursive: true });
 
                         let newContent: string;
@@ -292,7 +292,7 @@ async function main() {
             }
         }
     }
-    rl.close(); //! зараза мне кажется лучше как то ппо дургому прогу стопать
+    rl.close(); // TODO: улучшить способ остановки программы
     console.log(chalk.cyan('Session terminated.')); 
 }
 main(); 

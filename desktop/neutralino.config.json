@@ -53,6 +53,7 @@
       "initCommand": "npm install",
       "devCommand": "npm start",
       "buildCommand": "npm run build"
-    }
+    },
+    "binaryVersion": "6.1.0"
   }
 }
