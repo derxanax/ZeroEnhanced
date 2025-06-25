@@ -1,3 +1,5 @@
+// шок деркс еблан и сунул инфу о том как он круто мержил что поломал билдтнг
+
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import axios from 'axios';
@@ -467,8 +469,5 @@ wss.on('connection', (ws) => {
   });
 });
 
-<<<<<<< HEAD
 console.log(`WebSocket server running on ws://localhost:${WS_PORT}`); 
-=======
 console.log(`WebSocket server running on ws://localhost:${WS_PORT}`); 
->>>>>>> 7019bc8 (Обновление проекта ZetGui:)
