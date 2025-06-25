@@ -1,84 +1,155 @@
 <div align="center">
-  <img src="ZET.png" alt="Zet Logi" width="700"/>
-  <h1>Zet: Your Conversational DevOps Agent</h1>
-  <p><strong>Stop memorizing commands. Start having conversations with your terminal.</strong></p>
+  <img src="ZET.png" alt="Zet Logo" width="700"/>
+  
+  <!-- Language Selection -->
+  <p>
+    <strong>🇷🇺 Русский</strong> | 
+    <a href="README_EN.md">🇺🇸 English</a> | 
+    <a href="README_CN.md">🇨🇳 中文</a> | 
+    <a href="README_DE.md">🇩🇪 Deutsch</a>
+  </p>
+  
+  <h1>ZetGui: Ваш ИИ-терминал и IDE</h1>
+  <p><strong>Забудьте про запоминание команд. Начните разговор с вашим терминалом.</strong></p>
   <p>
     <a href="#"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"></a>
+    <a href="#"><img src="https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React"></a>
     <a href="#"><img src="https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js"></a>
     <a href="#"><img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker"></a>
+    <a href="#"><img src="https://img.shields.io/badge/Neutralino-000000?style=for-the-badge" alt="Neutralino"></a>
   </p>
 </div>
 
----
+## 🤔 Зачем ZetGui?
 
-## 🤔 Why Zet?
+В мире сложных CLI и бесконечных флагов, ZetGui предлагает революционную альтернативу: прямой разговор с ИИ-агентом, работающим в безопасной изолированной среде. Это не просто выполнение одной команды — это решение задач через диалог.
 
-In a world of complex CLIs and endless flags, Zet offers a revolutionary alternative: a direct conversation with a `root`-powered agent in a secure, isolated environment. It's not just about running one command; it's about accomplishing tasks.
+| Возможность | Описание |
+|-------------|----------|
+| 💬 **Естественный язык** | Просто скажите ZetGui, что хотите сделать. "Скачай Python, распакуй и добавь в PATH." Готово. |
+| 🛡️ **Безопасность по умолчанию** | Каждая команда выполняется в изолированном контейнере `ubuntu:24.04`. Ваша система всегда в безопасности. |
+| 🧠 **Прозрачный ИИ** | ZetGui показывает свой процесс мышления, объясняя *почему* он выбрал определенную команду перед выполнением. |
+| 🔧 **Полноценная IDE** | Встроенный редактор кода, файловый менеджер и терминал в одном приложении. |
+| 📱 **Desktop + Web** | Работает как настольное приложение (Neutralino) и в браузере. |
 
-| Feature                 | Description                                                                                             |
-| ----------------------- | ------------------------------------------------------------------------------------------------------- |
-| 💬 **Natural Language** | Just tell Zet what you want to do. "Download python, unzip it, and add it to the path." Done.            |
-| 🛡️ **Safe by Default** | Every command runs in a sandboxed `ubuntu:24.04` container. Your host OS is always safe.                |
-| 🧠 **Transparent AI**   | Zet shows you its `thought` process, explaining *why* it chose a particular command before it runs.       |
-|  empowered **Root on Demand**      | The agent has `root` access inside its sandbox, allowing it to install packages and manage services. |
+## 🚀 Как это работает
 
-## 🚀 How It Works
+ZetGui работает в простом, но мощном цикле:
 
-Zet operates in a simple, powerful loop:
+1. **Вы:** Даете задачу на обычном языке
+2. **ZetGui (ИИ):** Анализирует запрос, составляет план и переводит его в точную команду shell
+3. **ZetGui (Исполнитель):** Выполняет команду внутри безопасного Docker-контейнера
+4. **Вы:** Видите результат и продолжаете диалог
 
-1.  **You:** Provide a task in plain English.
-2.  **Zet (AI):** Analyzes your request, forms a plan, and translates it into a precise shell command.
-3.  **Zet (Executor):** Runs the command inside the secure Docker sandbox.
-4.  **You:** See the output and continue the conversation.
+## ⚡️ Быстрый старт
 
-## ⚡️ Getting Started
+> **Требования:** [Node.js](https://nodejs.org/) (v18+), [Docker](https://www.docker.com/), и [Kiala API](https://github.com/derxanax/Kiala-api-qwen) запущенный локально.
 
-> **Prerequisites:** You'll need [Node.js](https://nodejs.org/) (v18+), [Docker](https://www.docker.com/), and the [Kiala API](https://github.com/derxanax/Kiala-api-qwen) running locally.
-
-### 1. Setup Environment
-
-Clone the repo, install dependencies, and run the one-time setup script to build the sandbox.
+### 1. Настройка окружения
 
 ```bash
-# Clone the project
+# Клонируем проект
 git clone https://github.com/derxanax/ZeroEnhanced.git
 cd ZeroEnhanced
 
-# Install Node.js modules
+# Устанавливаем зависимости
 npm install
 
-# Build the Docker sandbox (one-time command)
+# Собираем Docker sandbox (единоразово)
 npm run setup
 ```
 
-### 2. Run Zet
-
-Launch the agent and start giving it tasks.
+### 2. Запуск Backend
 
 ```bash
-npm run dev
+cd backend
+npm install
+npm run dev  # Запускается на localhost:3003
 ```
 
-> **Note:** A `/sandbox` directory is automatically created and shared with the Docker container, allowing for easy file exchange.
+### 3. Запуск Desktop приложения
 
-## 🛣️ What's Next?
+```bash
+cd desktop
+npm install
+npm run dev  # Запускает Neutralino приложение
+```
 
-Zet is an evolving platform. Here's where we're headed:
+### 4. Или запуск Web версии
 
-- [ ] **Multi-Step Execution:** Autonomous execution of complex, multi-command workflows.
-- [ ] **Web & File Operations:** Native tools for interacting with APIs and the filesystem.
-- [ ] **Persistent State:** Giving the sandbox memory and state that persists between sessions.
-- [ ] **A GUI:** A dedicated graphical interface for managing Zet agents and their environments.
+```bash
+cd desktop/react-src
+npm install
+npm start   # Запускается на localhost:3000
+```
 
----
-<p align="center">Made with ❤️ by derx and ZAEAZAEX.</p>
+> **Примечание:** Папка `/sandbox` автоматически создается и монтируется в Docker контейнер для обмена файлами.
 
-## Автор
+## 🏗️ Архитектура
+
+```
+ZeroEnhanced/
+├── backend/           # Express.js API сервер
+├── desktop/           # Neutralino desktop приложение
+│   └── react-src/     # React UI компоненты
+├── docker-sandbox/    # Docker окружение для выполнения команд
+└── src/              # Основная логика (CLI версия)
+```
+
+## 🛣️ Что дальше?
+
+ZetGui - развивающаяся платформа. Планы на будущее:
+
+- [x] **Desktop приложение** с Neutralino
+- [x] **Многоязычный интерфейс** 
+- [ ] **Многошаговое выполнение:** Автономное выполнение сложных многокомандных процессов
+- [x] **Веб и файловые операции:** Встроенные инструменты для работы с API и файловой системой
+- [ ] **Постоянное состояние:** Память sandbox между сессиями
+- [ ] **Плагины:** Расширяемая система плагинов
+- [ ] **Облачная синхронизация:** Синхронизация настроек и проектов
+
+## 📝 Примеры использования
+
+### Разработка
+```
+Пользователь: "Создай новый React проект с TypeScript"
+ZetGui: Создаю React проект с TypeScript поддержкой...
+$ npx create-react-app my-app --template typescript
+```
+
+### DevOps
+```
+Пользователь: "Проверь статус всех Docker контейнеров и перезапусти остановленные"
+ZetGui: Проверяю Docker контейнеры и перезапускаю остановленные...
+$ docker ps -a && docker start $(docker ps -aq --filter "status=exited")
+```
+
+### Системное администрирование
+```
+Пользователь: "Найди все файлы больше 100MB и покажи топ-10"
+ZetGui: Ищу большие файлы в системе...
+$ find / -type f -size +100M -exec du -h {} + 2>/dev/null | sort -rh | head -10
+```
+
+## 👥 Авторы
 
 👤 **Саша (zarazaex)**  
 Telegram: [@zarazaex](https://t.me/zarazaex)
 
-👤 **Derx / lyzt** 
-Telegram: [@amyluutz](https://t.me/amyluutz)
-
+👤 **Derx / lyzt**  
+Telegram: [@amyluutz](https://t.me/amyluutz)  
 Mail: derx@derx.space
+
+👤 **Алексей**
+
+---
+
+<div align="center">
+  <p>Made with ❤️ by derx and zarazaex</p>
+  
+  <p>
+    <a href="https://github.com/derxanax/ZeroEnhanced">⭐ Star on GitHub</a> |
+    <a href="https://github.com/derxanax/ZeroEnhanced/issues">🐛 Report Bug</a> |
+    <a href="https://github.com/derxanax/ZeroEnhanced/discussions">💬 Discussions</a>
+  </p>
+</div>
