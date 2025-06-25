@@ -12,7 +12,7 @@ const rl = readline.createInterface({
 });
 
 // --- Deployment toggle: 1 = production (api.derx.space), 0 = localhost ---
-const USE_REMOTE = process.env.ZET_USE_REMOTE === '1';
+const USE_REMOTE = false;
 
 const API_HOST = USE_REMOTE ? 'https://api.derx.space' : 'http://localhost:4000';
 const AUTH_API_URL = `${API_HOST}/api/auth`;
@@ -66,10 +66,9 @@ const ensureAuthenticated = async (): Promise<string> => {
 
     while (true) {
         const email = await askQuestion(chalk.cyan('Email: '));
-        const password = await askQuestion(chalk.cyan('Password: ')); // пароль виден; можно заменить на скрытый ввод при желании
+        const password = await askQuestion(chalk.cyan('Password: ')); //! потом скрою пароль ща лень чот
 
         try {
-            // Пытаемся войти
             const loginResp = await axios.post(`${AUTH_API_URL}/login`, { email, password });
             const token: string = loginResp.data.token;
             saveToken(token);
@@ -78,7 +77,7 @@ const ensureAuthenticated = async (): Promise<string> => {
             return token;
         } catch (err: any) {
             if (axios.isAxiosError(err) && err.response?.status === 404) {
-                // Пользователь не найден – предложим зарегистрироваться
+                //! Пользователь не найден – предложим зарегистрироваться
                 const answer = await askQuestion(chalk.yellow('User not found. Register new account? (y/n) '));
                 if (answer.toLowerCase() !== 'y') {
                     continue;
@@ -106,8 +105,8 @@ const ensureAuthenticated = async (): Promise<string> => {
 };
 
 async function main() {
-    // Early GUI flag detection
-    if (process.argv.includes('--beta-gui')) {
+ //* для гуи на проде
+        if (process.argv.includes('--beta-gui')) {
         const { spawn } = require('child_process');
         const path = require('path');
         const desktopDir = path.join(__dirname, '..', '..', 'desktop');
@@ -116,7 +115,7 @@ async function main() {
             stdio: 'inherit'
         });
         child.on('exit', (code: number) => process.exit(code ?? 0));
-        return; // do not continue CLI flow
+        return; 
     }
 
     console.log(chalk.cyan('Initializing Zet...')); //! ыы я тупой пиндо ббббе пишу на английском блять
@@ -126,7 +125,6 @@ async function main() {
     const aiService = new AIService();
     const dockerService = new DockerService();
 
-    // --- Инициализация с возможной повторной авторизацией ---
     while (true) {
         try {
             await dockerService.ensureSandbox();
@@ -134,14 +132,12 @@ async function main() {
             await fetchRemaining(authToken);
             console.log(chalk.green('Initialization complete. Zet is ready.'));
             console.log(chalk.gray('Type "exit" or "quit" to end the session.'));
-            break; // успех — выходим из цикла
+            break; 
         } catch (error: any) {
             if (error.status === 401 || error.status === 403 || error.status === 404) {
                 console.error(chalk.yellow('Stored token is invalid or user is missing (status ' + error.status + '). Re-authentication required.'));
                 deleteToken();
-                authToken = await ensureAuthenticated();
-                // повторим цикл
-                continue;
+                authToken = await ensureAuthenticated();                continue;
             }
             const message = error instanceof Error ? error.message : 'An unknown error occurred.';
             console.error(chalk.red('Fatal error during initialization:'), message);
@@ -152,7 +148,7 @@ async function main() {
     let lastObservation = '';
     let currentPageId: number | null = null;
 
-    // Release page on Ctrl+C
+    //! бля я ебал даже так ctrl + c лагает оч
     process.on('SIGINT', async () => {
         try {
             if (currentPageId !== null) {
@@ -172,7 +168,6 @@ async function main() {
 
         const lowered = userInput.toLowerCase().trim();
 
-        // --- Local utility commands ---
         if (lowered === '/deluser' || lowered === '/logout') {
             console.log(chalk.yellow('Deleting local session...'));
             deleteToken();
@@ -251,7 +246,7 @@ async function main() {
                         const absPath = path.isAbsolute(targetFile)
                             ? targetFile
                             : path.join(process.cwd(), 'sandbox', targetFile);
-                        // ensure directory exists
+                        //! бля я ебал 
                         fs.mkdirSync(path.dirname(absPath), { recursive: true });
 
                         let newContent: string;
@@ -273,7 +268,6 @@ async function main() {
                 }
             }
 
-            // запрос к AI тоже списывает лимит — обновим
             await fetchRemaining(authToken);
 
             if (typeof newPageId === 'number') {

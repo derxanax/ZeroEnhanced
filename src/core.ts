@@ -4,7 +4,7 @@ import { Writable } from 'stream';
 
 // --- Deployment toggle ---
 // 1 = production (remote api.derx.space), 0 = local development (localhost:4000)
-const USE_REMOTE = process.env.ZET_USE_REMOTE === '1';
+const USE_REMOTE = false;
 
 const API_HOST = USE_REMOTE ? 'https://api.derx.space' : 'http://localhost:4000';
 const API_BASE_URL = `${API_HOST}/api/proxy`;
@@ -16,16 +16,16 @@ export interface AIAction { //* деркс бля какой аиа дай уж�
     tool: 'execute_command' | 'protocol_complete' | 'update_file';
     parameters: (
       | {
-            // for execute_command
+                //! для выполнения команды
             command: string;
             confirm: boolean;
             prompt?: string;
         }
       | {
-            // for update_file
+            //* для упд файле
             file: string;
             code: string;
-            edit: boolean; // false = replace full file, true = replace range
+            edit: boolean; 
             startLine?: number;
             endLine?: number;
             confirm: boolean;
@@ -105,7 +105,7 @@ export class AIService {
             });
             this.isInitialized = true;
         } catch (error) {
-            // Пробрасываем все ошибочные статусы (включая 404), чтобы main.ts мог корректно их обработать.
+            //* ктдаем все ошибочные статусы (включая 404), чтобы еод мог корректно их обработать.
             if (axios.isAxiosError(error) && error.response) {
                 const err: any = new Error(`Failed to initialize AI service: ${error.message}`);
                 err.status = error.response.status;
@@ -130,13 +130,12 @@ export class AIService {
         if (typeof pageId === 'number') body.pageId = pageId;
 
         const maxRetries = 3;
-        const baseDelayMs = 2_000; // 2 seconds
+        const baseDelayMs = 2_000; 
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
                 const response = await axios.post(`${API_BASE_URL}/send`, body, {
                     headers: { Authorization: `Bearer ${token}` },
-                    // 60-second timeout to avoid hanging forever
                     timeout: 60_000
                 });
 
@@ -144,7 +143,7 @@ export class AIService {
                 const newPageId = response.data.pageId as number | undefined;
                 return { ai: JSON.parse(aiRawResponse), pageId: newPageId };
             } catch (error) {
-                // If it's a 503 (pages not ready) we retry a few times with exponential back-off
+                //! если 503 (это было на стааром нестабильном vps сейчас по факту лишний код)
                 if (axios.isAxiosError(error) && error.response?.status === 503) {
                     if (attempt < maxRetries) {
                         const delay = baseDelayMs * (attempt + 1);
@@ -153,7 +152,6 @@ export class AIService {
                     }
                 }
 
-                // Any other error or exceeded retries: re-throw for the caller to handle
                 if (axios.isAxiosError(error) && error.response) {
                     throw {
                         status: error.response.status,
@@ -168,7 +166,6 @@ export class AIService {
             }
         }
 
-        // Should never reach here, but TypeScript needs a return
         throw new Error('Exhausted all retries but failed to get a response from AI.');
     }
 }

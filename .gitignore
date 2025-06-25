@@ -1,27 +1,158 @@
 # Dependencies
-/node_modules
+node_modules/
+*/node_modules/
+.pnp
+.pnp.js
 
-# Build output
-/dist
+# Production builds
+build/
+dist/
+*/build/
+*/dist/
+*/www/
+out/
+
+# Compiled JavaScript files (but keep source JS files)
+*.bundle.js
+*.bundle.js.map
+*.chunk.js
+*.chunk.js.map
+**/bundle.js
+**/bundle.js.map
+**/*.bundle.js
+**/*.bundle.js.map
+**/*.chunk.js
+**/*.chunk.js.map
+
+# TypeScript compiled JS files in src (these should go to dist/)
+src/**/*.js
+*/src/**/*.js
+react-src/src/**/*.js
+*/react-src/src/**/*.js
+
+# Build artifacts and compiled files
+*.min.js
+*.min.js.map
+*.compiled.js
+*.generated.js
+*.LICENSE.txt
+
+# Package manager files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+pnpm-workspace.yaml
+*/package-lock.json
+*/yarn.lock
+*/pnpm-lock.yaml
+*/pnpm-workspace.yaml
 
 # Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+.nyc_output
 
 # Environment variables
 .env
-.env.local
+.env*.local
 .env.development.local
 .env.test.local
 .env.production.local
 
-# IDEs
+# Cache directories
+.npm
+.eslintcache
+.stylelintcache
+.parcel-cache
+.cache/
+.temp/
+tmp/
+temp/
+.tmp/
+*/.cache/
+*/.temp/
+*/tmp/
+*/temp/
+*/.tmp/
+
+# TypeScript cache
+*.tsbuildinfo
+.tscache/
+
+# Webpack cache
+.webpack/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional stylelint cache
+.stylelintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# IDEs and editors
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
 # Sandbox
 # Ignoring the sandbox directory to prevent accidental commits of generated files.
 # Remove this line if you want to commit files in the sandbox.
-/sandbox 
+/sandbox/
+
+# Desktop app specific
+neutralino.log
+*.exe
+*.app
+*.dmg
+*.deb
+*.rpm
+
+# TypeScript/React build artifacts
+*.d.ts.map
+*.js.map
+
+# Temporary files
+*/.tpm
+.tpm

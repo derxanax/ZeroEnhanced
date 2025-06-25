@@ -1,0 +1,17 @@
+{
+  "name": "zetgui-desktop",
+  "version": "1.0.0",
+  "description": "ZetGui Desktop Application",
+  "main": "index.js",
+  "scripts": {
+    "start": "./start.sh",
+    "dev": "WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 npx neu run",
+    "build": "cd react-src && npm run build && cp -r build/* ../www/"
+  },
+  "keywords": ["neutralino", "desktop", "gui"],
+  "author": "derx",
+  "license": "MIT",
+  "devDependencies": {
+    "@neutralinojs/neu": "^10.7.0"
+  }
+} 
