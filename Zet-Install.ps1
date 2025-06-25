@@ -22,8 +22,8 @@ function Show-Menu {
     Write-Host "Выберите действие:" -ForegroundColor Yellow
     Write-Host "1) 📦 Установить все зависимости" -ForegroundColor White
     Write-Host "2) 🔨 Собрать все компоненты" -ForegroundColor White
-    Write-Host "3) 🖥️  Запустить CLI версию" -ForegroundColor White
-    Write-Host "4) 🖥️  Запустить Desktop GUI" -ForegroundColor White
+    Write-Host "3) ⌨️  Запустить CLI версию" -ForegroundColor White
+    Write-Host "4) 🖥️  Запустить GUI версию" -ForegroundColor White
     Write-Host "5) 🌐 Запустить Web версию" -ForegroundColor White
     Write-Host "6) ❌ Выход" -ForegroundColor White
     Write-Host ""
