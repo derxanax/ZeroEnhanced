@@ -1,1 +1,4 @@
-{"prod": false}
+{
+  "prod": true,
+  "domain": "https://zet-api.loca.lt"
+}

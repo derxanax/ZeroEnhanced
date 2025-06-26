@@ -1,80 +1,54 @@
 import axios from 'axios';
 
 // --- Функция для чтения конфигурации из Prod.json ---
-const loadConfig = async (): Promise<{ prod: boolean }> => {
+const loadConfig = async (): Promise<{ prod: boolean; domain?: string }> => {
+  if (isNeutralinoEnvironment()) {
     try {
-        // В браузере используем fetch для чтения из public
-        if (typeof window !== 'undefined') {
-            try {
-                const response = await fetch('/Prod.json');
-                if (response.ok) {
-                    const config = await response.json();
-                    return config;
-                }
-            } catch (fetchError) {
-                console.warn('Failed to fetch Prod.json from public directory:', fetchError);
-            }
-        } else {
-            // В Node.js окружении (Neutralino или SSR)
-            const possiblePaths = [
-                '../../Prod.json', // относительно src/services/
-                '../../../Prod.json', // относительно react-src/src/services/
-                '../../../../Prod.json', // относительно desktop/react-src/src/services/
-            ];
-            
-            for (const configPath of possiblePaths) {
-                try {
-                    // Используем динамический require чтобы избежать предупреждений webpack
-                    const fs = eval('require')('fs');
-                    const path = eval('require')('path');
-                    const fullPath = path.resolve(__dirname, configPath);
-                    
-                    if (fs.existsSync(fullPath)) {
-                        const configData = fs.readFileSync(fullPath, 'utf-8');
-                        return JSON.parse(configData);
-                    }
-                } catch (pathError) {
-                    continue;
-                }
-            }
-        }
-        
-        throw new Error('Prod.json not found');
+      const configData = await (window as any).Neutralino.filesystem.readFile('Prod.json');
+      return JSON.parse(configData);
     } catch (error) {
-        console.warn('Failed to load Prod.json, defaulting to development mode:', error);
-        return { prod: false };
+      console.warn('Failed to load Prod.json via Neutralino, defaulting to development mode:', error);
+      return { prod: false };
     }
+  } else {
+    try {
+      const response = await fetch('/Prod.json');
+      const configData = await response.json();
+      return configData;
+    } catch (error) {
+      console.warn('Failed to load Prod.json via fetch, defaulting to development mode:', error);
+      return { prod: false };
+    }
+  }
 };
 
-// --- Инициализация конфигурации ---
-let configPromise: Promise<{ prod: boolean }> | null = null;
-const getConfig = (): Promise<{ prod: boolean }> => {
-    if (!configPromise) {
-        configPromise = loadConfig();
-    }
-    return configPromise;
+// --- Cached Config ---
+let configCache: { prod: boolean; domain?: string } | null = null;
+
+const getConfig = (): Promise<{ prod: boolean; domain?: string }> => {
+  if (configCache) {
+    return Promise.resolve(configCache);
+  }
+  return loadConfig().then(config => {
+    configCache = config;
+    return config;
+  });
 };
 
 // --- Функция для получения API URL на основе конфигурации ---
 const getApiUrl = async (): Promise<string> => {
-    const config = await getConfig();
-    const USE_REMOTE = config.prod;
-    const BACKEND_HOST = USE_REMOTE ? 'https://zetapi.loophole.site/' : 'http://localhost:4000';
-    return `${BACKEND_HOST}/api/proxy`;
+  const config = await getConfig();
+  return config.prod ? (config.domain || 'https://zetapi.loophole.site/') + '/api/proxy' : 'http://localhost:4000/api/proxy';
 };
 
 const getAuthUrl = async (): Promise<string> => {
-    const config = await getConfig();
-    const USE_REMOTE = config.prod;
-    const BACKEND_HOST = USE_REMOTE ? 'https://zetapi.loophole.site/' : 'http://localhost:4000';
-    return `${BACKEND_HOST}/api/auth`;
+  const config = await getConfig();
+  return config.prod ? (config.domain || 'https://zetapi.loophole.site/') + '/api/auth' : 'http://localhost:4000/api/auth';
 };
 
 const getUserUrl = async (): Promise<string> => {
-    const config = await getConfig();
-    const USE_REMOTE = config.prod;
-    const BACKEND_HOST = USE_REMOTE ? 'https://zetapi.loophole.site/' : 'http://localhost:4000';
-    return `${BACKEND_HOST}/api/user/me`;
+  const config = await getConfig();
+  return config.prod ? (config.domain || 'https://zetapi.loophole.site/') + '/api/user/me' : 'http://localhost:4000/api/user/me';
 };
 
 //! проверяем среду выполнения
@@ -91,19 +65,74 @@ const universalStorage = {
   async getData(key: string): Promise<string | null> {
     if (isNeutralinoEnvironment()) {
       try {
+        // Для Desktop - читаем из того же файла что и CLI
+        if (key === 'auth_token') {
+          const { os } = await import('@neutralinojs/lib');
+          const homePath = await os.getPath('home' as any);
+          const tokenPath = `${homePath}/.config/zet/token`;
+
+          try {
+            const { filesystem } = await import('@neutralinojs/lib');
+            const tokenContent = await filesystem.readFile(tokenPath);
+            return tokenContent.trim();
+          } catch (error) {
+            console.warn('Failed to read token from file system, trying Neutralino storage:', error);
+            const { storage } = await import('@neutralinojs/lib');
+            return await storage.getData(key);
+          }
+        }
+
         const { storage } = await import('@neutralinojs/lib');
         return await storage.getData(key);
       } catch {
         return localStorage.getItem(key);
       }
     } else {
+      // Для Web версии - пытаемся через backend API
+      if (key === 'auth_token') {
+        try {
+          const response = await fetch('/api/auth/token');
+          if (response.ok) {
+            const data = await response.json();
+            return data.token;
+          }
+        } catch (error) {
+          console.warn('Failed to get token from backend, using localStorage:', error);
+        }
+      }
       return localStorage.getItem(key);
     }
   },
-  
+
   async setData(key: string, value: string): Promise<void> {
     if (isNeutralinoEnvironment()) {
       try {
+        // Для Desktop - сохраняем в тот же файл что и CLI
+        if (key === 'auth_token') {
+          const { os, filesystem } = await import('@neutralinojs/lib');
+          const homePath = await os.getPath('home' as any);
+          const configDir = `${homePath}/.config/zet`;
+          const tokenPath = `${configDir}/token`;
+
+          try {
+            // Создаем директорию если не существует
+            try {
+              await filesystem.createDirectory(configDir);
+            } catch (dirError) {
+              // Директория уже существует
+            }
+
+            await filesystem.writeFile(tokenPath, value);
+            console.log('Token saved to file system');
+            return;
+          } catch (error) {
+            console.warn('Failed to save token to file system, using Neutralino storage:', error);
+            const { storage } = await import('@neutralinojs/lib');
+            await storage.setData(key, value);
+            return;
+          }
+        }
+
         const { storage } = await import('@neutralinojs/lib');
         await storage.setData(key, value);
         return;
@@ -111,42 +140,54 @@ const universalStorage = {
         localStorage.setItem(key, value);
       }
     } else {
+      // Для Web версии - сохраняем через backend API + localStorage
+      if (key === 'auth_token') {
+        try {
+          await fetch('/api/auth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: value })
+          });
+        } catch (error) {
+          console.warn('Failed to save token to backend:', error);
+        }
+      }
       localStorage.setItem(key, value);
     }
   }
 };
 
 export interface AIAction {
-    tool: 'execute_command' | 'protocol_complete' | 'update_file';
-    parameters: (
-      | {
-            command: string;
-            confirm: boolean;
-            prompt?: string;
-        }
-      | {
-            file: string;
-            code?: string;
-            code_lines?: string[];
-            line_operations?: {
-                [lineNumber: string]: {
-                    action: 'insert' | 'replace' | 'delete';
-                    content?: string;
-                };
-            };
-            edit: boolean; 
-            startLine?: number;
-            endLine?: number;
-            confirm: boolean;
-            prompt?: string;
-        }
-    ) | null;
+  tool: 'execute_command' | 'protocol_complete' | 'update_file';
+  parameters: (
+    | {
+      command: string;
+      confirm: boolean;
+      prompt?: string;
+    }
+    | {
+      file: string;
+      code?: string;
+      code_lines?: string[];
+      line_operations?: {
+        [lineNumber: string]: {
+          action: 'insert' | 'replace' | 'delete';
+          content?: string;
+        };
+      };
+      edit: boolean;
+      startLine?: number;
+      endLine?: number;
+      confirm: boolean;
+      prompt?: string;
+    }
+  ) | null;
 }
 
 export interface AIResponse {
-    thought: string;
-    displayText?: string;
-    action: AIAction;
+  thought: string;
+  displayText?: string;
+  action: AIAction;
 }
 
 const systemPrompt = `
@@ -267,17 +308,17 @@ export class AIService {
     try {
       // Получаем токен из универсального хранилища
       this.token = await universalStorage.getData('auth_token');
-      
+
       if (!this.token) {
         throw new Error('Authentication token not found.');
       }
-      
+
       // Проверяем валидность токена через backend
       const userUrl = await getUserUrl();
       const response = await axios.get(userUrl, {
         headers: { Authorization: `Bearer ${this.token}` }
       });
-      
+
       if (response.status === 200) {
         this.isInitialized = true;
       } else {
@@ -287,7 +328,7 @@ export class AIService {
       if (axios.isAxiosError(error) && error.response) {
         const status = error.response.status;
         const errorData = error.response.data;
-        
+
         if (status === 401 || status === 403) {
           throw new Error('Токен недействителен. Необходимо войти заново.');
         } else if (status === 404) {
@@ -330,7 +371,7 @@ export class AIService {
 
         const aiRawResponse = response.data.response;
         const newPageId = response.data.pageId as number | undefined;
-        
+
         try {
           const parsedResponse = JSON.parse(aiRawResponse);
           return { ai: parsedResponse, pageId: newPageId };
@@ -339,9 +380,9 @@ export class AIService {
           console.error('Raw response:', aiRawResponse);
           console.error('Response length:', aiRawResponse?.length || 'undefined');
           console.error('JSON error:', jsonError instanceof Error ? jsonError.message : jsonError);
-          
+
           const cleanedResponse = aiRawResponse?.replace(/[\u0000-\u001F\u007F-\u009F]/g, '') || '';
-          
+
           try {
             const parsedResponse = JSON.parse(cleanedResponse);
             console.log('Successfully parsed cleaned JSON');
@@ -381,7 +422,7 @@ export class AIService {
           }
           throw new Error(`An unknown error occurred while getting command from AI.`);
         }
-        
+
         // Ждем перед следующей попыткой
         const delay = baseDelayMs * (attempt + 1);
         await new Promise(res => setTimeout(res, delay));
@@ -390,20 +431,24 @@ export class AIService {
 
     throw new Error('Exhausted all retries but failed to get a response from AI.');
   }
-  
+
   async login(email: string, password: string): Promise<void> {
     try {
       const authUrl = await getAuthUrl();
       const loginResp = await axios.post(`${authUrl}/login`, { email, password });
       const token: string = loginResp.data.token;
+
+      // Синхронизируем токен во всех хранилищах
       await universalStorage.setData('auth_token', token);
       this.token = token;
       this.isInitialized = true;
+
+      console.log('✅ Login successful and token synchronized across all applications');
     } catch (error) {
       if (axios.isAxiosError(error) && error.response) {
         const status = error.response.status;
         const errorData = error.response.data;
-        
+
         if (status === 404) {
           throw new Error('Пользователь не найден. Проверьте email или зарегистрируйтесь.');
         } else if (status === 401) {
@@ -438,7 +483,7 @@ export class AIService {
       if (axios.isAxiosError(error) && error.response) {
         const status = error.response.status;
         const errorData = error.response.data;
-        
+
         if (status === 400) {
           throw new Error(errorData?.error || 'Некорректные данные для регистрации');
         } else if (status === 409) {
@@ -457,10 +502,22 @@ export class AIService {
       throw new Error('Неизвестная ошибка при регистрации');
     }
   }
-  
+
   async logout(): Promise<void> {
+    // Удаляем токен из всех хранилищ
+    try {
+      if (!isNeutralinoEnvironment()) {
+        // Для Web версии - удаляем через backend API
+        await fetch('/api/auth/token', { method: 'DELETE' });
+      }
+    } catch (error) {
+      console.warn('Failed to delete token via backend:', error);
+    }
+
     await universalStorage.setData('auth_token', '');
     this.token = null;
     this.isInitialized = false;
+
+    console.log('✅ Logout successful and token removed from all applications');
   }
 } 

@@ -1,10 +1,10 @@
-import readline from 'readline';
-import chalk from 'chalk';
-import { AIService, DockerService } from './core';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
 import axios from 'axios';
+import chalk from 'chalk';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import readline from 'readline';
+import { AIService, DockerService } from './core';
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -12,7 +12,7 @@ const rl = readline.createInterface({
 });
 
 // --- Функция для чтения конфигурации из Prod.json ---
-const loadConfig = (): { prod: boolean } => {
+const loadConfig = (): { prod: boolean; domain?: string } => {
     try {
         const configPath = path.join(__dirname, '..', 'Prod.json');
         const configData = fs.readFileSync(configPath, 'utf-8');
@@ -27,7 +27,7 @@ const loadConfig = (): { prod: boolean } => {
 const config = loadConfig();
 const USE_REMOTE = config.prod;
 
-const API_HOST = USE_REMOTE ? 'https://zetapi.loophole.site/' : 'http://localhost:4000';
+const API_HOST = USE_REMOTE ? (config.domain || 'https://zetapi.loophole.site/') : 'http://localhost:4000';
 const AUTH_API_URL = `${API_HOST}/api/auth`;
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'zet');
 const TOKEN_PATH = path.join(CONFIG_DIR, 'token');
@@ -74,7 +74,7 @@ const ensureAuthenticated = async (): Promise<string> => {
     const existingToken = readToken();
     if (existingToken) return existingToken;
 
-    console.log(chalk.yellow('Authentication required.'));    
+    console.log(chalk.yellow('Authentication required.'));
 
     while (true) {
         const email = await askQuestion(chalk.cyan('Email: '));
@@ -127,11 +127,11 @@ async function main() {
             stdio: 'inherit'
         });
         child.on('exit', (code: number) => process.exit(code ?? 0));
-        return; 
+        return;
     }
 
     console.log(chalk.cyan('Initializing Zet...'));
-    
+
     let authToken = await ensureAuthenticated();
 
     const aiService = new AIService();
@@ -144,7 +144,7 @@ async function main() {
             await fetchRemaining(authToken);
             console.log(chalk.green('Initialization complete. Zet is ready.'));
             console.log(chalk.gray('Type "exit" or "quit" to end the session.'));
-            break; 
+            break;
         } catch (error: any) {
             if (error.status === 401 || error.status === 403 || error.status === 404) {
                 console.error(chalk.yellow('Stored token is invalid or user is missing (status ' + error.status + '). Re-authentication required.'));
@@ -164,7 +164,7 @@ async function main() {
     process.on('SIGINT', async () => {
         try {
             if (currentPageId !== null) {
-                await axios.post(`${API_HOST}/api/exit`, { pageId: currentPageId }).catch(() => {});
+                await axios.post(`${API_HOST}/api/exit`, { pageId: currentPageId }).catch(() => { });
                 console.log(chalk.yellow(`\nPage ${currentPageId} released.`));
             }
         } finally {
@@ -173,7 +173,7 @@ async function main() {
         }
     });
 
-    while (true) {  
+    while (true) {
         const countStr = chalk.magenta(`[${remainingRequests ?? '-'}]`);
         const promptStr = `\n${countStr} > `;
         const userInput = await askQuestion(promptStr);
@@ -207,13 +207,13 @@ async function main() {
 
             if (tool === 'protocol_complete') {
                 if (currentPageId !== null) {
-                    await axios.post(`${API_HOST}/api/exit`, { pageId: currentPageId }).catch(()=>{});
+                    await axios.post(`${API_HOST}/api/exit`, { pageId: currentPageId }).catch(() => { });
                     console.log(chalk.yellow(`Page ${currentPageId} released.`));
                 }
                 console.log(chalk.green('Zet: Task complete. Ready for new task.'));
                 currentPageId = null;
                 lastObservation = 'Previous task was completed successfully. Ready for a new task.';
-                continue; 
+                continue;
             }
 
             if (tool === 'execute_command' && parameters && 'command' in parameters) {
@@ -253,7 +253,7 @@ async function main() {
 
                 let shouldProceed = true;
                 if (shouldConfirm) {
-                const answer = await askQuestion(chalk.yellow(`${promptText} `));
+                    const answer = await askQuestion(chalk.yellow(`${promptText} `));
                     shouldProceed = answer.toLowerCase() === 'y';
                 }
 
@@ -265,7 +265,7 @@ async function main() {
                         const absPath = path.isAbsolute(targetFile)
                             ? targetFile
                             : path.join(process.cwd(), 'sandbox', targetFile);
-                        
+
                         fs.mkdirSync(path.dirname(absPath), { recursive: true });
 
                         let newContent: string;
@@ -276,13 +276,13 @@ async function main() {
                             let workingLines = [...fileLines];
 
                             console.log(chalk.cyan('Applying line operations:'));
-                            
+
                             const operations = Object.entries(p.line_operations).sort(([a], [b]) => parseInt(b) - parseInt(a));
-                            
+
                             for (const [lineNum, operation] of operations) {
                                 const lineIndex = parseInt(lineNum) - 1;
                                 const op = operation as { action: 'insert' | 'replace' | 'delete'; content?: string };
-                                
+
                                 switch (op.action) {
                                     case 'insert':
                                         workingLines.splice(lineIndex, 0, op.content || '');
@@ -309,10 +309,10 @@ async function main() {
                         }
                         else if (p.code) {
                             const editMode = p.edit as boolean;
-                        if (editMode && typeof p.startLine === 'number' && typeof p.endLine === 'number') {
-                            const fileLines = fs.readFileSync(absPath, 'utf-8').split(/\r?\n/);
-                            const before = fileLines.slice(0, p.startLine - 1);
-                            const after = fileLines.slice(p.endLine);
+                            if (editMode && typeof p.startLine === 'number' && typeof p.endLine === 'number') {
+                                const fileLines = fs.readFileSync(absPath, 'utf-8').split(/\r?\n/);
+                                const before = fileLines.slice(0, p.startLine - 1);
+                                const after = fileLines.slice(p.endLine);
                                 newContent = [...before, ...p.code.split(/\r?\n/), ...after].join('\n');
                             } else {
                                 newContent = p.code;
@@ -338,7 +338,7 @@ async function main() {
             }
         } catch (error: any) {
             console.error(chalk.red('\n--- Error Details ---'));
-            
+
             if (error.message && error.message.includes('JSON')) {
                 console.error(chalk.red('JSON parsing error detected. This may be due to:'));
                 console.error(chalk.yellow('1. Server response formatting issues'));
@@ -365,12 +365,12 @@ async function main() {
                 }
                 lastObservation = `The last action failed with error: ${message}. I should probably try something else.`;
             }
-            
+
             console.error(chalk.red('--- End Error Details ---\n'));
         }
     }
     rl.close();
-    console.log(chalk.cyan('Session terminated.')); 
+    console.log(chalk.cyan('Session terminated.'));
 }
 
 main(); 

@@ -1,11 +1,11 @@
 import axios from 'axios';
 import Docker from 'dockerode';
-import { Writable } from 'stream';
 import fs from 'fs';
 import path from 'path';
+import { Writable } from 'stream';
 
 // --- Функция для чтения конфигурации из Prod.json ---
-const loadConfig = (): { prod: boolean } => {
+const loadConfig = (): { prod: boolean; domain?: string } => {
     try {
         const configPath = path.join(__dirname, '..', 'Prod.json');
         const configData = fs.readFileSync(configPath, 'utf-8');
@@ -20,7 +20,7 @@ const loadConfig = (): { prod: boolean } => {
 const config = loadConfig();
 const USE_REMOTE = config.prod;
 
-const API_HOST = USE_REMOTE ? 'https://zetapi.loophole.site/' : 'http://localhost:4000';
+const API_HOST = USE_REMOTE ? (config.domain || 'https://zetapi.loophole.site/') : 'http://localhost:4000';
 const API_BASE_URL = `${API_HOST}/api/proxy`;
 
 const DOCKER_IMAGE_NAME = 'zet-sandbox-image';
@@ -29,12 +29,12 @@ const SANDBOX_CONTAINER_NAME = 'zet-sandbox';
 export interface AIAction {
     tool: 'execute_command' | 'protocol_complete' | 'update_file';
     parameters: (
-      | {
+        | {
             command: string;
             confirm: boolean;
             prompt?: string;
         }
-      | {
+        | {
             file: string;
             code?: string;
             code_lines?: string[];
@@ -44,7 +44,7 @@ export interface AIAction {
                     content?: string;
                 };
             };
-            edit: boolean; 
+            edit: boolean;
             startLine?: number;
             endLine?: number;
             confirm: boolean;
@@ -166,7 +166,7 @@ Your JSON response:
         "parameters": null
     }
 }
-`; 
+`;
 
 export class AIService {
     private isInitialized = false;
@@ -206,7 +206,7 @@ export class AIService {
         if (typeof pageId === 'number') body.pageId = pageId;
 
         const maxRetries = 3;
-        const baseDelayMs = 2_000; 
+        const baseDelayMs = 2_000;
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
@@ -217,7 +217,7 @@ export class AIService {
 
                 const aiRawResponse = response.data.response;
                 const newPageId = response.data.pageId as number | undefined;
-                
+
                 try {
                     const parsedResponse = JSON.parse(aiRawResponse);
                     return { ai: parsedResponse, pageId: newPageId };
@@ -226,9 +226,9 @@ export class AIService {
                     console.error('Raw response:', aiRawResponse);
                     console.error('Response length:', aiRawResponse?.length || 'undefined');
                     console.error('JSON error:', jsonError instanceof Error ? jsonError.message : jsonError);
-                    
+
                     const cleanedResponse = aiRawResponse?.replace(/[\u0000-\u001F\u007F-\u009F]/g, '') || '';
-                    
+
                     try {
                         const parsedResponse = JSON.parse(cleanedResponse);
                         console.log('Successfully parsed cleaned JSON');

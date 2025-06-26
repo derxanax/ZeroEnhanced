@@ -157,3 +157,5 @@ neutralino.log
 */.tpm
 .tpm
 /build/
+
+*.*.backup
