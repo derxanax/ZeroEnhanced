@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
+import React, { useEffect, useState } from 'react';
 
 interface CodeEditorProps {
   filePath?: string;
@@ -21,7 +21,6 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ filePath, onSave }) => {
   const loadFile = async (path: string) => {
     setIsLoading(true);
     try {
-      // Определяем язык по расширению
       const ext = path.split('.').pop()?.toLowerCase();
       const langMap: { [key: string]: string } = {
         'ts': 'typescript',
@@ -35,12 +34,10 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({ filePath, onSave }) => {
       };
       setLanguage(langMap[ext || ''] || 'plaintext');
 
-      // Загружаем содержимое файла через Neutralino API
       try {
         const result = await (window as any).Neutralino.filesystem.readFile(path);
         setContent(result);
       } catch (error) {
-        // Если файл не существует, показываем пример содержимого
         console.warn('Could not load file:', error);
         setContent(getExampleContent(path));
       }
@@ -66,7 +63,7 @@ const App: React.FC = () => {
 
 export default App;`;
     }
-    
+
     if (path.includes('.ts') || path.includes('.tsx')) {
       return `// TypeScript file: ${path}
 export interface Example {
@@ -81,7 +78,7 @@ export const exampleFunction = (): Example => {
   };
 };`;
     }
-    
+
     if (path.includes('.json')) {
       return `{
   "name": "example",
@@ -89,7 +86,7 @@ export const exampleFunction = (): Example => {
   "description": "Example JSON file"
 }`;
     }
-    
+
     return `// File: ${path}
 // This is an example file content
 // Select a file from the file explorer to edit it`;
@@ -103,7 +100,6 @@ export const exampleFunction = (): Example => {
     if (onSave) {
       onSave(content);
     }
-    // TODO: Сохранение файла через Neutralino API
     console.log('Saving file:', filePath, content);
   };
 
@@ -132,7 +128,7 @@ export const exampleFunction = (): Example => {
             </span>
           )}
         </div>
-        
+
         {filePath && (
           <button
             onClick={handleSave}
@@ -142,7 +138,7 @@ export const exampleFunction = (): Example => {
           </button>
         )}
       </div>
-      
+
       <div className="flex-1">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">

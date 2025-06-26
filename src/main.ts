@@ -40,6 +40,7 @@ let remainingRequests: number | null = null;
 
 const fetchRemaining = async (token: string): Promise<void> => {
     try {
+        // ответ: { email: string, request_count: number }
         const resp = await axios.get<UserInfo>(`${API_HOST}/api/user/me`, {
             headers: { Authorization: `Bearer ${token}` }
         });
@@ -78,9 +79,10 @@ const ensureAuthenticated = async (): Promise<string> => {
 
     while (true) {
         const email = await askQuestion(chalk.cyan('Email: '));
-        const password = await askQuestion(chalk.cyan('Password: ')); // TODO: скрыть пароль
+        const password = await askQuestion(chalk.cyan('Password: '));
 
         try {
+            // ответ: { token: string }
             const loginResp = await axios.post(`${AUTH_API_URL}/login`, { email, password });
             const token: string = loginResp.data.token;
             saveToken(token);
@@ -95,6 +97,7 @@ const ensureAuthenticated = async (): Promise<string> => {
                     continue;
                 }
                 try {
+                    // ответ: { token: string }
                     const regResp = await axios.post(`${AUTH_API_URL}/register`, { email, password });
                     const token: string = regResp.data.token;
                     saveToken(token);

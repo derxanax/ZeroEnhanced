@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 interface ChatMessage {
   id: string;
@@ -19,9 +19,9 @@ interface AIChatProps {
   className?: string;
 }
 
-export const AIChat: React.FC<AIChatProps> = ({ 
-  width, 
-  className = '' 
+export const AIChat: React.FC<AIChatProps> = ({
+  width,
+  className = ''
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -50,7 +50,7 @@ export const AIChat: React.FC<AIChatProps> = ({
       const response = await fetch('/api/user/me', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         setRemainingRequests(data.request_count);
@@ -188,7 +188,7 @@ Your JSON response:
             return;
           }
         }
-        
+
         if (executionResult) {
           // Command was auto-executed by backend
           if (executionResult.stdout) {
@@ -211,7 +211,7 @@ Your JSON response:
             return;
           }
         }
-        
+
         if (executionResult) {
           if (executionResult.success) {
             setLastObservation(`File ${action.parameters.file} updated successfully.`);
@@ -255,7 +255,7 @@ Your JSON response:
       }
 
       const prompt = buildPrompt(text, lastObservation);
-      
+
       const body: any = { message: prompt };
       if (pageId) body.pageId = pageId;
 
@@ -294,13 +294,13 @@ Your JSON response:
 
       // Handle AI action
       await handleAIAction(aiResponse.action, aiResponse.executionResult);
-      
+
       // Update remaining requests
       await fetchRemaining();
 
     } catch (error: any) {
       console.error('AI request failed:', error);
-      
+
       const errorMessage: ChatMessage = {
         id: `error-${Date.now()}`,
         type: 'error',
@@ -308,7 +308,7 @@ Your JSON response:
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMessage]);
-      
+
       // Handle specific error types
       if (error.message.includes('401') || error.message.includes('403')) {
         addSystemMessage('Authentication error. Please re-login.');
@@ -332,14 +332,14 @@ Your JSON response:
 
   const endSession = async () => {
     if (!pageId) return;
-    
+
     try {
       await fetch('/api/exit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pageId })
       });
-      
+
       setPageId(null);
       addSystemMessage('Session ended successfully');
     } catch (error) {
@@ -383,17 +383,17 @@ Your JSON response:
               {pageId ? `Session #${pageId}` : 'No session'}
             </span>
           </div>
-          
+
           {/* Requests Left */}
           {remainingRequests !== null && (
             <span className="text-sm bg-blue-700 px-2 py-1 rounded">
               {remainingRequests} left
             </span>
           )}
-          
+
           {/* Actions */}
           <div className="flex space-x-1">
-            <button 
+            <button
               onClick={clearChat}
               className="p-1 hover:bg-blue-700 rounded text-xs"
               title="Clear chat"
@@ -401,7 +401,7 @@ Your JSON response:
               Clear
             </button>
             {pageId && (
-              <button 
+              <button
                 onClick={endSession}
                 className="p-1 hover:bg-blue-700 rounded text-xs"
                 title="End session"
@@ -423,13 +423,13 @@ Your JSON response:
             <p className="text-lg font-medium mb-2">Welcome to ZetGui!</p>
             <p className="text-sm">Ask me to execute commands, create files, or help with tasks.</p>
             <div className="mt-4 flex flex-wrap gap-2 justify-center">
-              <button 
+              <button
                 onClick={() => sendMessage("Покажи содержимое текущей директории")}
                 className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded"
               >
                 List files
               </button>
-              <button 
+              <button
                 onClick={() => sendMessage("Создай простой Python скрипт")}
                 className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded"
               >
@@ -438,11 +438,11 @@ Your JSON response:
             </div>
           </div>
         )}
-        
+
         {messages.map((message) => (
           <ChatBubble key={message.id} message={message} />
         ))}
-        
+
         {isThinking && <ThinkingIndicator />}
         <div ref={messagesEndRef} />
       </div>
@@ -479,18 +479,17 @@ const ChatBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
   const isUser = message.type === 'user';
   const isError = message.type === 'error';
   const isSystem = message.type === 'system';
-  
+
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[80%] p-3 rounded-lg ${
-        isUser 
-          ? 'bg-blue-600 text-white' 
-          : isError 
-            ? 'bg-red-800 text-red-100' 
-            : isSystem 
-              ? 'bg-yellow-800 text-yellow-100'
-              : 'bg-gray-700 text-gray-100'
-      }`}>
+      <div className={`max-w-[80%] p-3 rounded-lg ${isUser
+        ? 'bg-blue-600 text-white'
+        : isError
+          ? 'bg-red-800 text-red-100'
+          : isSystem
+            ? 'bg-yellow-800 text-yellow-100'
+            : 'bg-gray-700 text-gray-100'
+        }`}>
         {!isUser && !isSystem && (
           <div className="flex items-center mb-2">
             <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center mr-2">
@@ -499,13 +498,13 @@ const ChatBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
             <span className="font-semibold text-blue-400">qZET</span>
           </div>
         )}
-        
+
         <div className="text-sm whitespace-pre-wrap">{message.content}</div>
-        
+
         {message.action && (
           <ActionPreview action={message.action} result={message.executionResult} />
         )}
-        
+
         <div className="text-xs opacity-70 mt-2">
           {message.timestamp.toLocaleTimeString()}
         </div>
@@ -517,7 +516,7 @@ const ChatBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
 // Action Preview Component
 const ActionPreview: React.FC<{ action: AIAction; result?: any }> = ({ action, result }) => {
   if (action.tool === 'protocol_complete') return null;
-  
+
   return (
     <div className="mt-2 p-2 bg-black bg-opacity-30 rounded text-xs font-mono">
       {action.tool === 'execute_command' && (
@@ -530,7 +529,7 @@ const ActionPreview: React.FC<{ action: AIAction; result?: any }> = ({ action, r
           )}
         </div>
       )}
-      
+
       {action.tool === 'update_file' && (
         <div>
           <div className="text-blue-300">✏️ {action.parameters.file}</div>

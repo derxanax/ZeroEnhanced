@@ -165,6 +165,7 @@ const executeCommand = async (command: string): Promise<{ stdout: string; stderr
 // Authentication endpoints
 app.post('/api/auth/login', async (req, res) => {
   try {
+    // ответ от внешнего api: { token: string }
     const response = await axios.post(`${API_HOST}/api/auth/login`, req.body);
     res.json(response.data);
   } catch (error) {
@@ -174,6 +175,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
   try {
+    // ответ от внешнего api: { token: string }
     const response = await axios.post(`${API_HOST}/api/auth/register`, req.body);
     res.json(response.data);
   } catch (error) {
@@ -268,6 +270,7 @@ app.post('/api/exit', async (req: Request, res: Response) => {
 // Enhanced AI proxy endpoint with action processing
 app.post('/api/proxy/send', async (req, res) => {
   try {
+    // ответ от внешнего api: { response: string, pageId?: number }
     const response = await axios.post(`${API_BASE_URL}/send`, req.body, {
       headers: { 'Authorization': req.headers.authorization }
     });
@@ -325,6 +328,7 @@ app.post('/api/proxy/send', async (req, res) => {
 
 app.get('/api/user/me', async (req, res) => {
   try {
+    // ответ от внешнего api: { email: string, request_count: number }
     const response = await axios.get(`${API_HOST}/api/user/me`, {
       headers: { 'Authorization': req.headers.authorization }
     });

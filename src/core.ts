@@ -4,7 +4,6 @@ import fs from 'fs';
 import path from 'path';
 import { Writable } from 'stream';
 
-// --- Функция для чтения конфигурации из Prod.json ---
 const loadConfig = (): { prod: boolean; domain?: string } => {
     try {
         const configPath = path.join(__dirname, '..', 'Prod.json');
@@ -16,7 +15,6 @@ const loadConfig = (): { prod: boolean; domain?: string } => {
     }
 };
 
-// --- Deployment toggle based on Prod.json ---
 const config = loadConfig();
 const USE_REMOTE = config.prod;
 
@@ -176,7 +174,7 @@ export class AIService {
             throw new Error('Authentication token is required for initialization.');
         }
         try {
-            //* Используем /api/user/me для проверки, что токен валиден и сервер доступен
+            // ответ: { email: string, request_count: number }
             await axios.get(`${API_HOST}/api/user/me`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -210,6 +208,7 @@ export class AIService {
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
+                // ответ: { response: string, pageId?: number }
                 const response = await axios.post(`${API_BASE_URL}/send`, body, {
                     headers: { Authorization: `Bearer ${token}` },
                     timeout: 60_000

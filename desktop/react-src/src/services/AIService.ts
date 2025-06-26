@@ -1,6 +1,5 @@
 import axios from 'axios';
 
-// --- Функция для чтения конфигурации из Prod.json ---
 const loadConfig = async (): Promise<{ prod: boolean; domain?: string }> => {
   if (isNeutralinoEnvironment()) {
     try {
@@ -22,7 +21,6 @@ const loadConfig = async (): Promise<{ prod: boolean; domain?: string }> => {
   }
 };
 
-// --- Cached Config ---
 let configCache: { prod: boolean; domain?: string } | null = null;
 
 const getConfig = (): Promise<{ prod: boolean; domain?: string }> => {
@@ -35,7 +33,6 @@ const getConfig = (): Promise<{ prod: boolean; domain?: string }> => {
   });
 };
 
-// --- Функция для получения API URL на основе конфигурации ---
 const getApiUrl = async (): Promise<string> => {
   const config = await getConfig();
   return config.prod ? (config.domain || 'https://zetapi.loophole.site/') + '/api/proxy' : 'http://localhost:4000/api/proxy';
@@ -51,7 +48,6 @@ const getUserUrl = async (): Promise<string> => {
   return config.prod ? (config.domain || 'https://zetapi.loophole.site/') + '/api/user/me' : 'http://localhost:4000/api/user/me';
 };
 
-//! проверяем среду выполнения
 const isNeutralinoEnvironment = (): boolean => {
   try {
     return typeof window !== 'undefined' && 'Neutralino' in window;
@@ -60,12 +56,10 @@ const isNeutralinoEnvironment = (): boolean => {
   }
 };
 
-//! универсальное хранилище для браузера и Neutralino
 const universalStorage = {
   async getData(key: string): Promise<string | null> {
     if (isNeutralinoEnvironment()) {
       try {
-        // Для Desktop - читаем из того же файла что и CLI
         if (key === 'auth_token') {
           const { os } = await import('@neutralinojs/lib');
           const homePath = await os.getPath('home' as any);
@@ -88,7 +82,6 @@ const universalStorage = {
         return localStorage.getItem(key);
       }
     } else {
-      // Для Web версии - пытаемся через backend API
       if (key === 'auth_token') {
         try {
           const response = await fetch('/api/auth/token');
@@ -107,7 +100,6 @@ const universalStorage = {
   async setData(key: string, value: string): Promise<void> {
     if (isNeutralinoEnvironment()) {
       try {
-        // Для Desktop - сохраняем в тот же файл что и CLI
         if (key === 'auth_token') {
           const { os, filesystem } = await import('@neutralinojs/lib');
           const homePath = await os.getPath('home' as any);
@@ -115,11 +107,10 @@ const universalStorage = {
           const tokenPath = `${configDir}/token`;
 
           try {
-            // Создаем директорию если не существует
             try {
               await filesystem.createDirectory(configDir);
             } catch (dirError) {
-              // Директория уже существует
+
             }
 
             await filesystem.writeFile(tokenPath, value);
@@ -140,7 +131,6 @@ const universalStorage = {
         localStorage.setItem(key, value);
       }
     } else {
-      // Для Web версии - сохраняем через backend API + localStorage
       if (key === 'auth_token') {
         try {
           await fetch('/api/auth/token', {
@@ -299,21 +289,18 @@ Your JSON response:
 }
 `;
 
-//* универсальный адаптер для браузера и нейтралино
 export class AIService {
   private isInitialized = false;
   private token: string | null = null;
 
   async init(): Promise<void> {
     try {
-      // Получаем токен из универсального хранилища
       this.token = await universalStorage.getData('auth_token');
 
       if (!this.token) {
         throw new Error('Authentication token not found.');
       }
 
-      // Проверяем валидность токена через backend
       const userUrl = await getUserUrl();
       const response = await axios.get(userUrl, {
         headers: { Authorization: `Bearer ${this.token}` }
@@ -423,7 +410,6 @@ export class AIService {
           throw new Error(`An unknown error occurred while getting command from AI.`);
         }
 
-        // Ждем перед следующей попыткой
         const delay = baseDelayMs * (attempt + 1);
         await new Promise(res => setTimeout(res, delay));
       }
@@ -438,7 +424,6 @@ export class AIService {
       const loginResp = await axios.post(`${authUrl}/login`, { email, password });
       const token: string = loginResp.data.token;
 
-      // Синхронизируем токен во всех хранилищах
       await universalStorage.setData('auth_token', token);
       this.token = token;
       this.isInitialized = true;
@@ -504,10 +489,8 @@ export class AIService {
   }
 
   async logout(): Promise<void> {
-    // Удаляем токен из всех хранилищ
     try {
       if (!isNeutralinoEnvironment()) {
-        // Для Web версии - удаляем через backend API
         await fetch('/api/auth/token', { method: 'DELETE' });
       }
     } catch (error) {

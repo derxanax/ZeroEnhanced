@@ -12,7 +12,7 @@ export const LoginForm: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
-    
+
     setIsLoading(true);
     try {
       if (mode === 'login') {
@@ -31,13 +31,13 @@ export const LoginForm: React.FC = () => {
         <h2 className="text-2xl font-bold mb-6 text-center text-dark-200">
           {mode === 'login' ? 'Login to ZetGui' : 'Register for ZetGui'}
         </h2>
-        
+
         {error && (
           <div className="bg-red-900/20 border border-red-800 text-red-200 px-4 py-3 rounded mb-4">
             {error}
           </div>
         )}
-        
+
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label htmlFor="email" className="block text-dark-300 mb-2">Email</label>
@@ -50,7 +50,7 @@ export const LoginForm: React.FC = () => {
               required
             />
           </div>
-          
+
           <div className="mb-6">
             <label htmlFor="password" className="block text-dark-300 mb-2">Password</label>
             <input
@@ -62,19 +62,19 @@ export const LoginForm: React.FC = () => {
               required
             />
           </div>
-          
+
           <button
             type="submit"
             disabled={isLoading}
             className="w-full bg-accent hover:bg-accent-dark text-dark-200 font-bold py-2 px-4 rounded-sm focus:outline-none focus:ring-2 focus:ring-accent transition-colors disabled:opacity-50"
           >
-            {isLoading 
-              ? (mode === 'login' ? 'Logging in...' : 'Registering...') 
+            {isLoading
+              ? (mode === 'login' ? 'Logging in...' : 'Registering...')
               : (mode === 'login' ? 'Login' : 'Register')
             }
           </button>
         </form>
-        
+
         <div className="mt-4 text-center">
           <button
             type="button"
@@ -82,8 +82,8 @@ export const LoginForm: React.FC = () => {
             className="text-accent hover:text-accent-dark transition-colors"
             disabled={isLoading}
           >
-            {mode === 'login' 
-              ? "Don't have an account? Register" 
+            {mode === 'login'
+              ? "Don't have an account? Register"
               : "Already have an account? Login"
             }
           </button>
