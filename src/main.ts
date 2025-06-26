@@ -36,7 +36,6 @@ const fetchRemaining = async (token: string): Promise<void> => {
     }
 };
 
-// --- Token Management ---
 const saveToken = (token: string): void => {
     if (!fs.existsSync(CONFIG_DIR)) {
         fs.mkdirSync(CONFIG_DIR, { recursive: true });
@@ -137,7 +136,8 @@ async function main() {
             if (error.status === 401 || error.status === 403 || error.status === 404) {
                 console.error(chalk.yellow('Stored token is invalid or user is missing (status ' + error.status + '). Re-authentication required.'));
                 deleteToken();
-                authToken = await ensureAuthenticated();                continue;
+                authToken = await ensureAuthenticated();
+                continue;
             }
             const message = error instanceof Error ? error.message : 'An unknown error occurred.';
             console.error(chalk.red('Fatal error during initialization:'), message);
@@ -148,7 +148,6 @@ async function main() {
     let lastObservation = '';
     let currentPageId: number | null = null;
 
-    // обработчик Ctrl+C
     process.on('SIGINT', async () => {
         try {
             if (currentPageId !== null) {
@@ -161,7 +160,7 @@ async function main() {
         }
     });
 
-    while (true) { // основной цикл 
+    while (true) {  
         const countStr = chalk.magenta(`[${remainingRequests ?? '-'}]`);
         const promptStr = `\n${countStr} > `;
         const userInput = await askQuestion(promptStr);
@@ -199,10 +198,9 @@ async function main() {
                     console.log(chalk.yellow(`Page ${currentPageId} released.`));
                 }
                 console.log(chalk.green('Zet: Task complete. Ready for new task.'));
-                // Очищаем контекст для нового задания, но НЕ завершаем сессию
                 currentPageId = null;
                 lastObservation = 'Previous task was completed successfully. Ready for a new task.';
-                continue; // Продолжаем работу вместо завершения
+                continue; 
             }
 
             if (tool === 'execute_command' && parameters && 'command' in parameters) {
@@ -259,7 +257,6 @@ async function main() {
 
                         let newContent: string;
 
-                        // Новая система: line_operations
                         if (p.line_operations) {
                             const fileExists = fs.existsSync(absPath);
                             const fileLines = fileExists ? fs.readFileSync(absPath, 'utf-8').split(/\r?\n/) : [];
@@ -267,11 +264,10 @@ async function main() {
 
                             console.log(chalk.cyan('Applying line operations:'));
                             
-                            // Сортируем операции по номеру строки (по убыванию для правильного применения)
                             const operations = Object.entries(p.line_operations).sort(([a], [b]) => parseInt(b) - parseInt(a));
                             
                             for (const [lineNum, operation] of operations) {
-                                const lineIndex = parseInt(lineNum) - 1; // конвертируем в 0-based индекс
+                                const lineIndex = parseInt(lineNum) - 1;
                                 const op = operation as { action: 'insert' | 'replace' | 'delete'; content?: string };
                                 
                                 switch (op.action) {
@@ -295,11 +291,9 @@ async function main() {
                             }
                             newContent = workingLines.join('\n');
                         }
-                        // Массив строк (старая система, но улучшенная)
                         else if (p.code_lines) {
                             newContent = p.code_lines.join('\n');
                         }
-                        // Классическая система с одной строкой кода
                         else if (p.code) {
                             const editMode = p.edit as boolean;
                             if (editMode && typeof p.startLine === 'number' && typeof p.endLine === 'number') {
@@ -330,7 +324,6 @@ async function main() {
                 currentPageId = newPageId;
             }
         } catch (error: any) {
-            // Улучшенная обработка ошибок
             console.error(chalk.red('\n--- Error Details ---'));
             
             if (error.message && error.message.includes('JSON')) {
@@ -349,7 +342,7 @@ async function main() {
                 authToken = await ensureAuthenticated();
                 lastObservation = 'Authentication failed (status ' + error.status + '). A new login process has been started.';
                 if (error.status === 400 || error.status === 404) {
-                    currentPageId = null; // invalidate page
+                    currentPageId = null;
                 }
             } else {
                 const message = error.message || 'An unknown error occurred.';
@@ -363,7 +356,8 @@ async function main() {
             console.error(chalk.red('--- End Error Details ---\n'));
         }
     }
-    rl.close(); // TODO: улучшить способ остановки программы
+    rl.close();
     console.log(chalk.cyan('Session terminated.')); 
 }
+
 main(); 

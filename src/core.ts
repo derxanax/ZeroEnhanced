@@ -162,7 +162,7 @@ export class AIService {
             throw new Error('Authentication token is required for initialization.');
         }
         try {
-            // Используем /api/user/me для проверки, что токен валиден и сервер доступен
+            //* Используем /api/user/me для проверки, что токен валиден и сервер доступен
             await axios.get(`${API_HOST}/api/user/me`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -204,7 +204,6 @@ export class AIService {
                 const aiRawResponse = response.data.response;
                 const newPageId = response.data.pageId as number | undefined;
                 
-                // Добавляем логирование и лучшую обработку ошибок JSON
                 try {
                     const parsedResponse = JSON.parse(aiRawResponse);
                     return { ai: parsedResponse, pageId: newPageId };
@@ -214,26 +213,13 @@ export class AIService {
                     console.error('Response length:', aiRawResponse?.length || 'undefined');
                     console.error('JSON error:', jsonError instanceof Error ? jsonError.message : jsonError);
                     
-                    // Попытка "починить" JSON
-                    let cleanedResponse = aiRawResponse?.replace(/[\u0000-\u001F\u007F-\u009F]/g, '') || '';
-                    
-                    // Попытка исправить неэкранированные кавычки в строках кода
-                    // Ищем паттерн "code": "...print("...")..." и экранируем внутренние кавычки
-                    cleanedResponse = cleanedResponse.replace(
-                        /"code":\s*"([^"]*(?:\\.[^"]*)*?)"/g,
-                        (match: string, codeContent: string) => {
-                            // Экранируем неэкранированные кавычки внутри строки кода
-                            const escapedCode = codeContent.replace(/(?<!\\)"/g, '\\"');
-                            return `"code": "${escapedCode}"`;
-                        }
-                    );
+                    const cleanedResponse = aiRawResponse?.replace(/[\u0000-\u001F\u007F-\u009F]/g, '') || '';
                     
                     try {
                         const parsedResponse = JSON.parse(cleanedResponse);
                         console.log('Successfully parsed cleaned JSON');
                         return { ai: parsedResponse, pageId: newPageId };
                     } catch (secondJsonError) {
-                        // Если всё равно не удаётся распарсить, возвращаем заглушку
                         console.error('Failed to parse even cleaned JSON:', secondJsonError);
                         const fallbackResponse: AIResponse = {
                             thought: "Произошла ошибка при обработке ответа от ИИ. Возможно, сервер вернул некорректный JSON.",
