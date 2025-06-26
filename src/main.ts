@@ -237,9 +237,7 @@ async function main() {
             else if (tool === 'update_file' && parameters) {
                 const p: any = parameters;
                 const targetFile = p.file;
-                const code = p.code as string;
-                const editMode = p.edit as boolean;
-                const shouldConfirm = p.confirm === true; // только если явно установлено true
+                const shouldConfirm = p.confirm === true;
                 const promptText = p.prompt || `Update file "${targetFile}"? (y/n)`;
 
                 let shouldProceed = true;
@@ -256,20 +254,68 @@ async function main() {
                         const absPath = path.isAbsolute(targetFile)
                             ? targetFile
                             : path.join(process.cwd(), 'sandbox', targetFile);
-                        // создаем директорию если не существует
+                        
                         fs.mkdirSync(path.dirname(absPath), { recursive: true });
 
                         let newContent: string;
-                        if (editMode && typeof p.startLine === 'number' && typeof p.endLine === 'number') {
-                            const fileLines = fs.readFileSync(absPath, 'utf-8').split(/\r?\n/);
-                            const before = fileLines.slice(0, p.startLine - 1);
-                            const after = fileLines.slice(p.endLine);
-                            newContent = [...before, ...code.split(/\r?\n/), ...after].join('\n');
-                        } else {
-                            newContent = code;
+
+                        // Новая система: line_operations
+                        if (p.line_operations) {
+                            const fileExists = fs.existsSync(absPath);
+                            const fileLines = fileExists ? fs.readFileSync(absPath, 'utf-8').split(/\r?\n/) : [];
+                            let workingLines = [...fileLines];
+
+                            console.log(chalk.cyan('Applying line operations:'));
+                            
+                            // Сортируем операции по номеру строки (по убыванию для правильного применения)
+                            const operations = Object.entries(p.line_operations).sort(([a], [b]) => parseInt(b) - parseInt(a));
+                            
+                            for (const [lineNum, operation] of operations) {
+                                const lineIndex = parseInt(lineNum) - 1; // конвертируем в 0-based индекс
+                                const op = operation as { action: 'insert' | 'replace' | 'delete'; content?: string };
+                                
+                                switch (op.action) {
+                                    case 'insert':
+                                        workingLines.splice(lineIndex, 0, op.content || '');
+                                        console.log(chalk.green(`  ✓ Inserted line ${lineNum}: ${op.content}`));
+                                        break;
+                                    case 'replace':
+                                        if (lineIndex < workingLines.length) {
+                                            workingLines[lineIndex] = op.content || '';
+                                            console.log(chalk.yellow(`  ✓ Replaced line ${lineNum}: ${op.content}`));
+                                        }
+                                        break;
+                                    case 'delete':
+                                        if (lineIndex < workingLines.length) {
+                                            workingLines.splice(lineIndex, 1);
+                                            console.log(chalk.red(`  ✓ Deleted line ${lineNum}`));
+                                        }
+                                        break;
+                                }
+                            }
+                            newContent = workingLines.join('\n');
                         }
+                        // Массив строк (старая система, но улучшенная)
+                        else if (p.code_lines) {
+                            newContent = p.code_lines.join('\n');
+                        }
+                        // Классическая система с одной строкой кода
+                        else if (p.code) {
+                            const editMode = p.edit as boolean;
+                            if (editMode && typeof p.startLine === 'number' && typeof p.endLine === 'number') {
+                                const fileLines = fs.readFileSync(absPath, 'utf-8').split(/\r?\n/);
+                                const before = fileLines.slice(0, p.startLine - 1);
+                                const after = fileLines.slice(p.endLine);
+                                newContent = [...before, ...p.code.split(/\r?\n/), ...after].join('\n');
+                            } else {
+                                newContent = p.code;
+                            }
+                        } else {
+                            throw new Error('No code content provided (code, code_lines, or line_operations required)');
+                        }
+
                         fs.writeFileSync(absPath, newContent, 'utf-8');
-                        console.log(chalk.green(`File ${targetFile} updated.`));
+                        console.log(chalk.green(`File ${targetFile} updated successfully.`));
                         lastObservation = `File ${targetFile} updated successfully.`;
                     } catch (err) {
                         console.error(chalk.red(`Failed to update file: ${(err as Error).message}`));
