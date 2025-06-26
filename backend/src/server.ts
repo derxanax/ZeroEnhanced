@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 3003;
 const WS_PORT = 8080;
 
 const USE_REMOTE = false;
-const API_HOST = USE_REMOTE ? 'https://api.derx.space' : 'http://localhost:4000';
+const API_HOST = USE_REMOTE ? 'https://zetapi.loophole.site/' : 'http://localhost:4000';
 const API_BASE_URL = `${API_HOST}/api/proxy`;
 
 const DOCKER_IMAGE_NAME = 'zet-sandbox-image';

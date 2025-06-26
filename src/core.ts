@@ -1,12 +1,26 @@
 import axios from 'axios';
 import Docker from 'dockerode';
 import { Writable } from 'stream';
+import fs from 'fs';
+import path from 'path';
 
-// --- Deployment toggle ---
-// 1 = production (remote api.derx.space), 0 = local development (localhost:4000)
-const USE_REMOTE = false;
+// --- Функция для чтения конфигурации из Prod.json ---
+const loadConfig = (): { prod: boolean } => {
+    try {
+        const configPath = path.join(__dirname, '..', 'Prod.json');
+        const configData = fs.readFileSync(configPath, 'utf-8');
+        return JSON.parse(configData);
+    } catch (error) {
+        console.warn('Failed to load Prod.json, defaulting to development mode:', error);
+        return { prod: false };
+    }
+};
 
-const API_HOST = USE_REMOTE ? 'https://api.derx.space' : 'http://localhost:4000';
+// --- Deployment toggle based on Prod.json ---
+const config = loadConfig();
+const USE_REMOTE = config.prod;
+
+const API_HOST = USE_REMOTE ? 'https://zetapi.loophole.site/' : 'http://localhost:4000';
 const API_BASE_URL = `${API_HOST}/api/proxy`;
 
 const DOCKER_IMAGE_NAME = 'zet-sandbox-image';

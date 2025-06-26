@@ -79,12 +79,97 @@ You MUST follow these rules:
     - 'prompt' (optional): The text for the confirmation prompt.
 7.  For 'update_file' parameters MUST contain:
     - 'file': path (relative or absolute) to file you are touching.
-    - 'code': the new code fragment or full file contents.
+    - ONE of these code methods:
+      A) 'code': single string with entire file content (classic method, avoid for complex code)
+      B) 'code_lines': array of strings, each element is a line (better for readability)
+      C) 'line_operations': object for precise line-by-line editing (best for modifications)
     - 'edit': false to replace whole file, true to replace only a range.
     - When 'edit' is true you MUST also provide 'startLine' and 'endLine' (1-based, inclusive).
     - 'confirm': whether to ask user y/n before applying update.
     - Optional 'prompt' for confirmation question.
-8.  For 'protocol_complete' just set parameters to null.`;
+
+8.  LINE_OPERATIONS FORMAT (for precise editing):
+    "line_operations": {
+      "2": { "action": "insert", "content": "import json" },
+      "5": { "action": "replace", "content": "# Updated comment" },
+      "10": { "action": "delete" }
+    }
+    Actions: 'insert' (add before line), 'replace' (replace line), 'delete' (remove line)
+
+9.  CODE_LINES FORMAT (for clean code):
+    "code_lines": [
+      "import datetime",
+      "",
+      "# Get current time", 
+      "now = datetime.datetime.now()",
+      "print(\\"Current time:\\", now.strftime(\\"%Y-%m-%d %H:%M:%S\\"))"
+    ]
+
+10. For 'protocol_complete' just set parameters to null.
+
+Example user request: "List all files in the current directory"
+Your JSON response:
+{
+    "thought": "Пользователь хочет посмотреть файлы в текущей директории. Самая подходящая команда для этого — 'ls -F', так как она также покажет типы файлов (директории, исполняемые файлы). Я подготовлю краткое сообщение для пользователя.",
+    "displayText": "Содержимое текущей директории:",
+    "action": {
+        "tool": "execute_command",
+        "parameters": {
+            "command": "ls -F",
+            "confirm": false
+        }
+    }
+}
+
+Example file creation with code_lines:
+{
+    "thought": "Создаю Python файл для отображения времени, используя code_lines для чистоты.",
+    "displayText": "Создаю файл clock.py",
+    "action": {
+        "tool": "update_file",
+        "parameters": {
+            "file": "clock.py",
+            "code_lines": [
+                "import datetime",
+                "",
+                "# Get current time",
+                "now = datetime.datetime.now()",
+                "print(\\"Current time:\\", now.strftime(\\"%Y-%m-%d %H:%M:%S\\"))"
+            ],
+            "edit": false,
+            "confirm": false
+        }
+    }
+}
+
+Example line operations (adding import to existing file):
+{
+    "thought": "Добавляю импорт json в существующий файл на строку 2.",
+    "displayText": "Добавляю импорт json",
+    "action": {
+        "tool": "update_file",
+        "parameters": {
+            "file": "main.py",
+            "line_operations": {
+                "2": { "action": "insert", "content": "import json" }
+            },
+            "edit": true,
+            "confirm": false
+        }
+    }
+}
+
+Example user request: "Thanks, we are done"
+Your JSON response:
+{
+    "thought": "Пользователь подтвердил завершение работы. Завершаю сеанс.",
+    "displayText": "Сессия завершена.",
+    "action": {
+        "tool": "protocol_complete",
+        "parameters": null
+    }
+}
+`;
 
     return `${systemPrompt}\n[OBSERVATION]\n${observation || "You are at the beginning of the session."}\n[USER_REQUEST]\n${userInput}`;
   };

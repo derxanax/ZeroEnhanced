@@ -11,10 +11,23 @@ const rl = readline.createInterface({
     output: process.stdout
 });
 
-// --- Deployment toggle: 1 = production (api.derx.space), 0 = localhost ---
-const USE_REMOTE = false;
+// --- Функция для чтения конфигурации из Prod.json ---
+const loadConfig = (): { prod: boolean } => {
+    try {
+        const configPath = path.join(__dirname, '..', 'Prod.json');
+        const configData = fs.readFileSync(configPath, 'utf-8');
+        return JSON.parse(configData);
+    } catch (error) {
+        console.warn('Failed to load Prod.json, defaulting to development mode:', error);
+        return { prod: false };
+    }
+};
 
-const API_HOST = USE_REMOTE ? 'https://api.derx.space' : 'http://localhost:4000';
+// --- Deployment toggle based on Prod.json ---
+const config = loadConfig();
+const USE_REMOTE = config.prod;
+
+const API_HOST = USE_REMOTE ? 'https://zetapi.loophole.site/' : 'http://localhost:4000';
 const AUTH_API_URL = `${API_HOST}/api/auth`;
 const CONFIG_DIR = path.join(os.homedir(), '.config', 'zet');
 const TOKEN_PATH = path.join(CONFIG_DIR, 'token');
@@ -240,7 +253,7 @@ async function main() {
 
                 let shouldProceed = true;
                 if (shouldConfirm) {
-                    const answer = await askQuestion(chalk.yellow(`${promptText} `));
+                const answer = await askQuestion(chalk.yellow(`${promptText} `));
                     shouldProceed = answer.toLowerCase() === 'y';
                 }
 
@@ -296,10 +309,10 @@ async function main() {
                         }
                         else if (p.code) {
                             const editMode = p.edit as boolean;
-                            if (editMode && typeof p.startLine === 'number' && typeof p.endLine === 'number') {
-                                const fileLines = fs.readFileSync(absPath, 'utf-8').split(/\r?\n/);
-                                const before = fileLines.slice(0, p.startLine - 1);
-                                const after = fileLines.slice(p.endLine);
+                        if (editMode && typeof p.startLine === 'number' && typeof p.endLine === 'number') {
+                            const fileLines = fs.readFileSync(absPath, 'utf-8').split(/\r?\n/);
+                            const before = fileLines.slice(0, p.startLine - 1);
+                            const after = fileLines.slice(p.endLine);
                                 newContent = [...before, ...p.code.split(/\r?\n/), ...after].join('\n');
                             } else {
                                 newContent = p.code;
