@@ -8,11 +8,19 @@
     "build": "tsc",
     "start": "node src/main.js"
   },
-  "keywords": ["ai", "terminal", "ide", "docker", "cli", "gui"],
+  "keywords": [
+    "ai",
+    "terminal",
+    "ide",
+    "docker",
+    "cli",
+    "gui"
+  ],
   "author": "derx, zarazaex",
   "license": "MIT",
   "devDependencies": {
     "@types/chalk": "^0.4.31",
+    "@types/dockerode": "^3.3.41",
     "@types/node": "^20.0.0",
     "ts-node": "^10.9.0",
     "typescript": "^5.0.0"

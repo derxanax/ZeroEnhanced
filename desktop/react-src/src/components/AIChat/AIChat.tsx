@@ -137,11 +137,13 @@ You MUST follow these rules:
         break;
 
       case 'protocol_complete':
-        // Session completed - show completion message
-        addSystemMessage('Zet: Task complete. Session ended.');
+        // Session completed - clean context but keep chat active
+        addSystemMessage('Zet: Task complete. Ready for new task.');
         if (pageId) {
-          await endSession();
+          await endSession(); // This releases the current pageId
         }
+        // Clear context for new task (but keep chat history)
+        setLastObservation('Previous task was completed successfully. Ready for a new task.');
         break;
     }
   };

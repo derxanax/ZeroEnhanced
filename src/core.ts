@@ -137,7 +137,37 @@ export class AIService {
 
                 const aiRawResponse = response.data.response;
                 const newPageId = response.data.pageId as number | undefined;
-                return { ai: JSON.parse(aiRawResponse), pageId: newPageId };
+                
+                // Добавляем логирование и лучшую обработку ошибок JSON
+                try {
+                    const parsedResponse = JSON.parse(aiRawResponse);
+                    return { ai: parsedResponse, pageId: newPageId };
+                } catch (jsonError) {
+                    console.error('JSON parse error details:');
+                    console.error('Raw response:', aiRawResponse);
+                    console.error('Response length:', aiRawResponse?.length || 'undefined');
+                    console.error('JSON error:', jsonError instanceof Error ? jsonError.message : jsonError);
+                    
+                    // Попытка "починить" JSON, удалив невидимые символы
+                    const cleanedResponse = aiRawResponse?.replace(/[\u0000-\u001F\u007F-\u009F]/g, '') || '';
+                    try {
+                        const parsedResponse = JSON.parse(cleanedResponse);
+                        console.log('Successfully parsed cleaned JSON');
+                        return { ai: parsedResponse, pageId: newPageId };
+                    } catch (secondJsonError) {
+                        // Если всё равно не удаётся распарсить, возвращаем заглушку
+                        console.error('Failed to parse even cleaned JSON:', secondJsonError);
+                        const fallbackResponse: AIResponse = {
+                            thought: "Произошла ошибка при обработке ответа от ИИ. Возможно, сервер вернул некорректный JSON.",
+                            displayText: "Ошибка парсинга ответа ИИ",
+                            action: {
+                                tool: "protocol_complete",
+                                parameters: null
+                            }
+                        };
+                        return { ai: fallbackResponse, pageId: newPageId };
+                    }
+                }
             } catch (error) {
                 if (axios.isAxiosError(error) && error.response?.status === 503) {
                     if (attempt < maxRetries) {
@@ -174,7 +204,7 @@ export class DockerService {
 
     private async findContainer(): Promise<Docker.Container | null> {
         const containers = await this.docker.listContainers({ all: true });
-        const containerInfo = containers.find(c => c.Names.includes(`/${SANDBOX_CONTAINER_NAME}`));
+        const containerInfo = containers.find((c: Docker.ContainerInfo) => c.Names.includes(`/${SANDBOX_CONTAINER_NAME}`));
         if (containerInfo) {
             return this.docker.getContainer(containerInfo.Id);
         }

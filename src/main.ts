@@ -196,9 +196,13 @@ async function main() {
             if (tool === 'protocol_complete') {
                 if (currentPageId !== null) {
                     await axios.post(`${API_HOST}/api/exit`, { pageId: currentPageId }).catch(()=>{});
+                    console.log(chalk.yellow(`Page ${currentPageId} released.`));
                 }
-                console.log(chalk.green('Zet: Task complete. Ending session.'));
-                break;
+                console.log(chalk.green('Zet: Task complete. Ready for new task.'));
+                // Очищаем контекст для нового задания, но НЕ завершаем сессию
+                currentPageId = null;
+                lastObservation = 'Previous task was completed successfully. Ready for a new task.';
+                continue; // Продолжаем работу вместо завершения
             }
 
             if (tool === 'execute_command' && parameters && 'command' in parameters) {
@@ -235,10 +239,16 @@ async function main() {
                 const targetFile = p.file;
                 const code = p.code as string;
                 const editMode = p.edit as boolean;
+                const shouldConfirm = p.confirm === true; // только если явно установлено true
                 const promptText = p.prompt || `Update file "${targetFile}"? (y/n)`;
 
-                const answer = await askQuestion(chalk.yellow(`${promptText} `));
-                if (answer.toLowerCase() !== 'y') {
+                let shouldProceed = true;
+                if (shouldConfirm) {
+                    const answer = await askQuestion(chalk.yellow(`${promptText} `));
+                    shouldProceed = answer.toLowerCase() === 'y';
+                }
+
+                if (!shouldProceed) {
                     console.log(chalk.yellow('Update aborted by user.'));
                     lastObservation = 'User aborted file update.';
                 } else {
@@ -274,7 +284,17 @@ async function main() {
                 currentPageId = newPageId;
             }
         } catch (error: any) {
-            if (error.status === 429) {
+            // Улучшенная обработка ошибок
+            console.error(chalk.red('\n--- Error Details ---'));
+            
+            if (error.message && error.message.includes('JSON')) {
+                console.error(chalk.red('JSON parsing error detected. This may be due to:'));
+                console.error(chalk.yellow('1. Server response formatting issues'));
+                console.error(chalk.yellow('2. Network corruption'));
+                console.error(chalk.yellow('3. API response truncation'));
+                console.error(chalk.gray('Full error:'), error.message);
+                lastObservation = 'The AI response contained malformed JSON and could not be processed. Please try rephrasing your request.';
+            } else if (error.status === 429) {
                 console.error(chalk.red('Request limit exceeded. Please upgrade your plan.'));
                 lastObservation = 'The previous command failed because the request limit was exceeded.';
             } else if (error.status === 401 || error.status === 403 || error.status === 404) {
@@ -288,8 +308,13 @@ async function main() {
             } else {
                 const message = error.message || 'An unknown error occurred.';
                 console.error(chalk.red('An error occurred:'), message);
+                if (error.stack) {
+                    console.error(chalk.gray('Stack trace:'), error.stack);
+                }
                 lastObservation = `The last action failed with error: ${message}. I should probably try something else.`;
             }
+            
+            console.error(chalk.red('--- End Error Details ---\n'));
         }
     }
     rl.close(); // TODO: улучшить способ остановки программы
