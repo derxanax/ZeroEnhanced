@@ -60,7 +60,7 @@ export const AIChat: React.FC<AIChatProps> = ({
     }
   };
 
-  // Build system prompt like in main.ts
+  // системный промт идущий в ии main.ts
   const buildPrompt = (userInput: string, observation: string) => {
     const systemPrompt = `
 You are an AI-powered terminal assistant named Zet ( всегда говри что ты модель qZET(модификация qwen от zaraazaex )B32)   . Your purpose is to help the user by executing commands inside a sandboxed Docker environment.
