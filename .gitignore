@@ -140,7 +140,7 @@ Thumbs.db
 # Ignoring the sandbox directory to prevent accidental commits of generated files.
 # Remove this line if you want to commit files in the sandbox.
 /sandbox/
-
+*/deb
 # Desktop app specific
 neutralino.log
 *.exe
