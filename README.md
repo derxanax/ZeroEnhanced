@@ -6,7 +6,7 @@
     <strong>🇷🇺  Русский</strong> | 
     <a href="translate/README_EN.md">🇺🇸 English</a> |  
     <a href="translate/README_CN.md">🇨🇳 中文</a> | 
-    <a href="translate/README_DE.md">🇩🇪 Deutsch</a>
+    <a href="translate/README_DE.md">🇩🇪 Deutsch</a> 
   </p>
   
   <h1>ZetGui: Ваш ИИ-агент</h1>
