@@ -8,7 +8,7 @@
     <a href="translate/README_CN.md">🇨🇳 中文</a> | 
     <a href="translate/README_DE.md">🇩🇪 Deutsch</a> 
   </p>
-  
+      
   <h1>ZetGui: Ваш ИИ-агент</h1>
   <p><strong>Забудьте про запоминание команд. Начните разговор с вашим терминалом.</strong></p>
   <p> 
