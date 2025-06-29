@@ -9,7 +9,7 @@
     <a href="translate/README_DE.md">🇩🇪 Deutsch</a>
   </p>
   
-  <h1>ZetGui: Ваш ИИ-терминал и IDE</h1>
+  <h1>ZetGui: Ваш ИИ-агент</h1>
   <p><strong>Забудьте про запоминание команд. Начните разговор с вашим терминалом.</strong></p>
   <p>
     <a href="#"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"></a>
