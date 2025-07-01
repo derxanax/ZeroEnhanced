@@ -43,7 +43,7 @@ ZetGui работает в простом, но мощном цикле:
 
 ## ⚡️ Быстрый старт
 
-> **Требования:** [Node.js](https://nodejs.org/) (v18+), [Docker](https://www.docker.com/), и [Kiala API](https://github.com/derxanax/Kiala-api-qwen) запущенный локально.
+> **Требования:** [Node.js](https://nodejs.org/) (v18+), [Docker](https://www.docker.com/), и [Kiala API](https://github.com/suusypullyhi/Kiala-api-qwen) запущенный на сервере (Project closed - zet mody source)
 
 ### 🎯 Быстрый запуск (одна команда!)
 
