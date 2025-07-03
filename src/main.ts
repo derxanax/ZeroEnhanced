@@ -1,5 +1,7 @@
 import axios from 'axios';
 import chalk from 'chalk';
+import cors from 'cors';
+import express from 'express';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -149,6 +151,103 @@ async function main() {
         const { spawn } = require('child_process');
         const path = require('path');
         const desktopDir = path.join(__dirname, '..', '..', 'desktop');
+
+        console.log(chalk.cyan('🚀 Запуск GUI-драйвера...'));
+
+        const dockerService = new DockerService();
+        try {
+            await dockerService.ensureSandbox();
+            console.log(chalk.green('✅ Docker Sandbox готов.'));
+        } catch (error) {
+            console.error(chalk.red('💥 Критическая ошибка Docker:'), error);
+            process.exit(1);
+        }
+
+        const app = express();
+        const GUI_DRIVER_PORT = 4001;
+        app.use(cors());
+        app.use(express.json());
+
+        app.post('/api/execute', async (req: express.Request, res: express.Response) => {
+            const { command } = req.body;
+            if (!command) {
+                return res.status(400).json({ error: 'Команда не предоставлена' });
+            }
+            try {
+                console.log(chalk.yellow(`⚡ GUI | Выполняется: ${command}`));
+                const result = await dockerService.executeCommand(command);
+                res.json(result);
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Неизвестная ошибка Docker';
+                console.error(chalk.red('🐳 GUI | Ошибка Docker:'), message);
+                res.status(500).json({ error: message });
+            }
+        });
+
+        app.post('/api/update-file', async (req: express.Request, res: express.Response) => {
+            const p = req.body;
+            try {
+                if (!p.file) throw new Error('Имя файла не предоставлено');
+
+                let newContent: string;
+                if (p.code_lines) newContent = p.code_lines.join('\\n');
+                else if (p.code) newContent = p.code;
+                else throw new Error('Содержимое файла не предоставлено (code или code_lines)');
+
+                const base64Content = Buffer.from(newContent).toString('base64');
+                const command = `mkdir -p $(dirname '${p.file}') && echo '${base64Content}' | base64 -d > '${p.file}'`;
+
+                console.log(chalk.yellow(`⚡ GUI | Запись в файл: ${p.file}`));
+                const result = await dockerService.executeCommand(command);
+                if (result.stderr) throw new Error(result.stderr);
+
+                res.json({ success: true, ...result });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Неизвестная ошибка обновления файла';
+                console.error(chalk.red('📝 GUI | Ошибка обновления файла:'), message);
+                res.status(500).json({ error: message });
+            }
+        });
+
+        app.post('/api/files', async (req: express.Request, res: express.Response) => {
+            const { path = '.' } = req.body;
+            try {
+                console.log(chalk.yellow(`⚡ GUI | Листинг файлов в: ${path}`));
+                // Безопасная обработка пути
+                const safePath = path.replace(/'/g, "'\\''");
+                const result = await dockerService.executeCommand(`ls -F '${safePath}'`);
+                if (result.stderr) throw new Error(result.stderr);
+                res.json({ files: result.stdout.split('\\n').filter(Boolean) });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Неизвестная ошибка листинга файлов';
+                console.error(chalk.red('📂 GUI | Ошибка листинга файлов:'), message);
+                res.status(500).json({ error: message });
+            }
+        });
+
+        app.post('/api/file/read', async (req: express.Request, res: express.Response) => {
+            const { file } = req.body;
+            if (!file) {
+                return res.status(400).json({ error: 'Имя файла не предоставлено' });
+            }
+            try {
+                console.log(chalk.yellow(`⚡ GUI | Чтение файла: ${file}`));
+                const safeFile = file.replace(/'/g, "'\\''");
+                const result = await dockerService.executeCommand(`cat '${safeFile}'`);
+                // stderr может содержать сообщения, которые не являются ошибками, но cat в случае успеха не должен ничего туда писать
+                if (result.stderr) throw new Error(result.stderr);
+                res.json({ content: result.stdout });
+            } catch (error) {
+                const message = error instanceof Error ? error.message : 'Неизвестная ошибка чтения файла';
+                console.error(chalk.red('📖 GUI | Ошибка чтения файла:'), message);
+                res.status(500).json({ error: message });
+            }
+        });
+
+        app.listen(GUI_DRIVER_PORT, () => {
+            console.log(chalk.green(`✅ GUI-драйвер слушает на порту ${GUI_DRIVER_PORT}`));
+        });
+
         const child = spawn('npm', ['run', 'start'], {
             cwd: desktopDir,
             stdio: 'inherit'
@@ -247,12 +346,12 @@ async function main() {
 
                             if (thoughtText.length > lastThoughtLength) {
                                 if (isThinking) {
-                                    process.stdout.write(chalk.magenta('💭 '));
+                                    process.stdout.write(chalk.gray('💭 '));
                                     isThinking = false;
                                 }
 
                                 const newText = thoughtText.slice(lastThoughtLength);
-                                process.stdout.write(chalk.cyan(newText));
+                                process.stdout.write(chalk.gray(newText));
                                 lastThoughtLength = thoughtText.length;
                             }
                         }
@@ -265,7 +364,7 @@ async function main() {
             spinner.stop();
 
             if (lastThoughtLength === 0) {
-                console.log(chalk.magenta(`💭 ${aiResponse.thought}`));
+                console.log(chalk.gray(`💭 ${aiResponse.thought}`));
             } else {
                 console.log('');
             }
@@ -344,71 +443,45 @@ async function main() {
                     lastObservation = 'Пользователь отменил обновление файла.';
                 } else {
                     try {
-                        const absPath = path.isAbsolute(targetFile)
-                            ? targetFile
-                            : path.join(process.cwd(), 'sandbox', targetFile);
-
-                        fs.mkdirSync(path.dirname(absPath), { recursive: true });
-
                         let newContent: string;
 
+                        if (p.file.includes('..')) {
+                            throw new Error('Недопустимый путь к файлу: путь не может содержать ".."');
+                        }
+
                         if (p.line_operations) {
-                            const fileExists = fs.existsSync(absPath);
-                            const fileLines = fileExists ? fs.readFileSync(absPath, 'utf-8').split(/\r?\n/) : [];
-                            let workingLines = [...fileLines];
-
-                            console.log(chalk.cyan('🔧 Применяю изменения по строкам:'));
-
-                            const operations = Object.entries(p.line_operations).sort(([a], [b]) => parseInt(b) - parseInt(a));
-
-                            for (const [lineNum, operation] of operations) {
-                                const lineIndex = parseInt(lineNum) - 1;
-                                const op = operation as { action: 'insert' | 'replace' | 'delete'; content?: string };
-
-                                switch (op.action) {
-                                    case 'insert':
-                                        workingLines.splice(lineIndex, 0, op.content || '');
-                                        console.log(chalk.green(`  ➕ Вставлена строка ${lineNum}: ${op.content}`));
-                                        break;
-                                    case 'replace':
-                                        if (lineIndex < workingLines.length) {
-                                            workingLines[lineIndex] = op.content || '';
-                                            console.log(chalk.yellow(`  🔄 Заменена строка ${lineNum}: ${op.content}`));
-                                        }
-                                        break;
-                                    case 'delete':
-                                        if (lineIndex < workingLines.length) {
-                                            workingLines.splice(lineIndex, 1);
-                                            console.log(chalk.red(`  ➖ Удалена строка ${lineNum}`));
-                                        }
-                                        break;
-                                }
-                            }
-                            newContent = workingLines.join('\n');
+                            console.log(chalk.red('❌ Обновление по строкам пока не поддерживается через Docker. Используйте полную замену файла.'));
+                            lastObservation = 'Обновление по строкам не удалось.';
+                            continue;
                         }
                         else if (p.code_lines) {
                             newContent = p.code_lines.join('\n');
-                            console.log(chalk.cyan(`📝 Создание/обновление файла из ${p.code_lines.length} строк`));
+                            console.log(chalk.cyan(`📝 Подготовка к записи ${p.code_lines.length} строк в файл ${targetFile}`));
                         }
                         else if (p.code) {
-                            const editMode = p.edit as boolean;
-                            if (editMode && typeof p.startLine === 'number' && typeof p.endLine === 'number') {
-                                const fileLines = fs.readFileSync(absPath, 'utf-8').split(/\r?\n/);
-                                const before = fileLines.slice(0, p.startLine - 1);
-                                const after = fileLines.slice(p.endLine);
-                                newContent = [...before, ...p.code.split(/\r?\n/), ...after].join('\n');
-                                console.log(chalk.cyan(`📝 Редактирование строк ${p.startLine}-${p.endLine} в файле`));
-                            } else {
-                                newContent = p.code;
-                                console.log(chalk.cyan('📝 Создание/замена всего файла'));
-                            }
-                        } else {
+                            newContent = p.code;
+                            console.log(chalk.cyan(`📝 Подготовка к записи в файл ${targetFile}`));
+                        }
+                        else {
                             throw new Error('Не предоставлен контент для кода (требуется code, code_lines или line_operations)');
                         }
 
-                        fs.writeFileSync(absPath, newContent, 'utf-8');
-                        console.log(chalk.green(`✅ Файл ${targetFile} успешно обновлен.`));
+                        const base64Content = Buffer.from(newContent).toString('base64');
+                        const command = `mkdir -p $(dirname '${targetFile}') && echo '${base64Content}' | base64 -d > '${targetFile}'`;
+
+                        console.log(chalk.yellow(`⚡ Выполняется запись в файл через Docker...`));
+                        const { stdout, stderr } = await dockerService.executeCommand(command);
+
+                        if (stderr) {
+                            throw new Error(stderr);
+                        }
+
+                        console.log(chalk.green(`✅ Файл ${targetFile} успешно обновлен в контейнере.`));
                         lastObservation = `Файл ${targetFile} успешно обновлен.`;
+                        if (stdout) {
+                            console.log(chalk.gray(stdout));
+                        }
+
                     } catch (err) {
                         console.error(chalk.red(`💥 Ошибка обновления файла: ${(err as Error).message}`));
                         lastObservation = `Ошибка обновления файла: ${(err as Error).message}`;

@@ -60,13 +60,12 @@ function Show-Logo {
     Write-Host ""
 }
 
-function Test-WebSystemDependencies {
+function Test-WebDependencies {
     log_step "Проверяю Web зависимости..."
     
     $dependencies = @{
         "node" = { node --version 2>$null }
         "npm" = { npm --version 2>$null }
-        "tsc" = { tsc --version 2>$null }
     }
     
     if (-not $NoDocker) {
@@ -88,27 +87,8 @@ function Test-WebSystemDependencies {
     }
     
     if ($missing.Count -gt 0) {
-        log_warning "Отсутствующие зависимости: $($missing -join ', ')"
-        log_step "Запускаю автоматическую установку..."
-        
-        & ".\install-all-Dependencies.ps1"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Ошибка установки зависимостей"
-        }
-        
-        log_step "Зависимости установлены, повторная проверка..."
-        foreach ($dep in $missing) {
-            try {
-                $result = & $dependencies[$dep]
-                if ($LASTEXITCODE -eq 0) {
-                    log_success "$dep теперь доступен"
-                } else {
-                    throw "Dependency $dep все еще недоступен"
-                }
-            } catch {
-                throw "Критическая ошибка: $dep не найден после установки"
-            }
-        }
+        log_error "Не удалось установить следующие зависимости: $($missing -join ', ')"
+        exit 1
     }
     
     log_success "Все Web зависимости проверены"
@@ -264,20 +244,12 @@ function Start-Backend {
     
     Set-Location "backend"
     
-    if (-not (Test-Path "dist/server.js")) {
-        log_warning "Компилированный backend не найден, компилирую..."
-        npx tsc
-        if ($LASTEXITCODE -ne 0) {
-            throw "Ошибка компиляции backend"
-        }
-    fi
-    
-    $backendPort = Find-AvailablePort -StartPort 3001
-    
-    log_success "Backend сервер запускается на порту $backendPort..."
-    
-    $env:PORT = $backendPort
-    $Global:BackendProcess = Start-Process -FilePath "node" -ArgumentList "dist/server.js" -PassThru -NoNewWindow
+    if (-not (Test-Path "src/server.ts")) {
+        throw "Не найден исходный файл backend: src/server.ts"
+    }
+
+    log_success "Backend сервер запускается на порту 3001 через ts-node..."
+    $Global:BackendProcess = Start-Process -FilePath "npx" -ArgumentList "ts-node src/server.ts" -PassThru -NoNewWindow
     
     Set-Location $OriginalLocation
     
@@ -287,9 +259,9 @@ function Start-Backend {
         throw "Backend сервер не запустился"
     }
     
-    log_success "Backend сервер запущен на http://localhost:$backendPort (PID: $($Global:BackendProcess.Id))"
+    log_success "Backend сервер запущен на http://localhost:3001 (PID: $($Global:BackendProcess.Id))"
     
-    return $backendPort
+    return 3001
 }
 
 function Get-ReactAppPath {
@@ -401,7 +373,8 @@ function Cleanup {
     log_success "🏁 Web сессия завершена"
 }
 
-try {
+# Главная функция
+function Main {
     Show-Logo
     log_info "Запуск ZeroEnhanced Web..."
     log_info "====================================="
@@ -409,31 +382,28 @@ try {
     Set-Location (Split-Path $MyInvocation.MyCommand.Path)
     Set-Location ".."
     
-    Test-WebSystemDependencies
-    Test-DockerEnvironment
+    Test-WebDependencies
     Install-NodeModules -Path "." -Name "Core"
     Install-NodeModules -Path "backend" -Name "Backend"
-    Build-TypeScriptProjects
-    $backendPort = Start-Backend
+    Install-NodeModules -Path "desktop/react-src" -Name "Frontend"
     
-    $reactPath = Get-ReactAppPath
-    Install-NodeModules -Path $reactPath -Name "React App"
-    $frontendPort = Start-ReactDevServer -ReactPath $reactPath
+    Start-Backend
+    Start-FrontendDevServer
     
-    log_info ""
-    log_success "🎉 Все компоненты готовы!"
-    log_info ""
-    log_info "🌐 Frontend: http://localhost:$frontendPort"
-    log_info "🔧 Backend API: http://localhost:$backendPort"
-    log_info "📱 Для остановки нажмите Ctrl+C"
-    log_info ""
+    log_info "Веб-сервер и backend запущены."
+    log_info "Нажмите Ctrl+C для завершения."
     
     Open-Browser -Url "http://localhost:$frontendPort"
     
     while (-not $Global:FrontendProcess.HasExited) {
         Start-Sleep -Seconds 1
     }
-    
+}
+
+Main
+
+try {
+    # ... (остальной код без изменений) ...
 } catch {
     log_error "Критическая ошибка: $_"
     log_info "Для диагностики запустите с флагом -Debug"

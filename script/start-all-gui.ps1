@@ -64,7 +64,6 @@ function Test-GUISystemDependencies {
     $dependencies = @{
         "node" = { node --version 2>$null }
         "npm" = { npm --version 2>$null }
-        "tsc" = { tsc --version 2>$null }
         "neu" = { neu --version 2>$null }
     }
     
@@ -281,16 +280,12 @@ function Start-Backend {
     
     Set-Location "backend"
     
-    if (-not (Test-Path "dist/server.js")) {
-        log_warning "Компилированный backend не найден, компилирую..."
-        npx tsc
-        if ($LASTEXITCODE -ne 0) {
-            throw "Ошибка компиляции backend"
-        }
+    if (-not (Test-Path "src/server.ts")) {
+        throw "Не найден исходный файл backend: src/server.ts"
     }
     
-    log_success "Backend сервер запускается на порту 3001..."
-    $Global:BackendProcess = Start-Process -FilePath "node" -ArgumentList "dist/server.js" -PassThru -NoNewWindow
+    log_success "Backend сервер запускается на порту 3001 через ts-node..."
+    $Global:BackendProcess = Start-Process -FilePath "npx" -ArgumentList "ts-node src/server.ts" -PassThru -NoNewWindow
     
     Set-Location $OriginalLocation
     
@@ -350,7 +345,8 @@ function Cleanup {
     log_success "🏁 GUI сессия завершена"
 }
 
-try {
+# Главная функция
+function Main {
     Show-Logo
     log_info "Запуск ZeroEnhanced GUI..."
     log_info "====================================="
@@ -359,16 +355,14 @@ try {
     Set-Location ".."
     
     Test-GUISystemDependencies
-    Test-DockerEnvironment
     Install-NodeModules -Path "." -Name "Core"
     Install-NodeModules -Path "backend" -Name "Backend"
     Install-NodeModules -Path "desktop/react-src" -Name "Desktop React"
-    Build-TypeScriptProjects
     Build-ReactApp
     Initialize-Neutralino
     Start-Backend
     
-    log_info ""
+    Write-Host ""
     log_success "🎉 Все компоненты готовы!"
     log_info ""
     
@@ -380,11 +374,14 @@ try {
     while (-not $Global:NeutralinoProcess.HasExited) {
         Start-Sleep -Seconds 1
     }
-    
+}
+
+Main
+
+try {
+    Cleanup
 } catch {
     log_error "Критическая ошибка: $_"
     log_info "Для диагностики запустите с флагом -Debug"
     exit 1
-} finally {
-    Cleanup
 } 

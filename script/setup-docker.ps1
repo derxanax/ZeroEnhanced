@@ -3,7 +3,8 @@
 
 param(
     [string]$Action = "setup",
-    [switch]$Help
+    [switch]$Help,
+    [switch]$Rebuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -158,163 +159,60 @@ function New-SandboxDirectory {
 function New-Dockerfile {
     log_step "Проверка Dockerfile..."
     
-    if (-not (Test-Path $DOCKERFILE_PATH)) {
-        log_info "Создаю Dockerfile..."
-        
-        $dockerDir = Split-Path $DOCKERFILE_PATH -Parent
-        if (-not (Test-Path $dockerDir)) {
-            New-Item -ItemType Directory -Path $dockerDir -Force | Out-Null
-        }
-        
-        $dockerfileContent = @'
-# ZetGui Sandbox Container
-# Безопасная среда выполнения для AI команд
-
+    log_info "Создаю простой Dockerfile..."
+    
+    $dockerDir = Split-Path $DOCKERFILE_PATH -Parent
+    if (-not (Test-Path $dockerDir)) {
+        New-Item -ItemType Directory -Path $dockerDir -Force | Out-Null
+    }
+    
+    $dockerfileContent = @'
+# Простой образ Ubuntu, запуск от root
 FROM ubuntu:22.04
 
-# Аргументы для UID/GID
-ARG UID=1000
-ARG GID=1000
+# Установка минимально необходимых утилит
+RUN apt-get update && apt-get install -y curl sudo git && rm -rf /var/lib/apt/lists/*
 
-# Переменные окружения
-ENV DEBIAN_FRONTEND=noninteractive
-ENV NODE_VERSION=20
-ENV PYTHON_VERSION=3.11
-
-# Установка базовых пакетов
-RUN apt-get update && apt-get install -y \
-    curl \
-    wget \
-    git \
-    nano \
-    vim \
-    htop \
-    tree \
-    jq \
-    unzip \
-    zip \
-    build-essential \
-    python3 \
-    python3-pip \
-    python3-venv \
-    nodejs \
-    npm \
-    ca-certificates \
-    gnupg \
-    lsb-release \
-    software-properties-common \
-    sudo \
-    && rm -rf /var/lib/apt/lists/*
-
-# Установка Node.js LTS
-RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
-    && apt-get install -y nodejs
-
-# Обновление npm
-RUN npm install -g npm@latest
-
-# Установка полезных npm пакетов
-RUN npm install -g \
-    typescript \
-    ts-node \
-    nodemon \
-    prettier \
-    eslint
-
-# Установка Python пакетов
-RUN pip3 install --upgrade pip setuptools wheel \
-    && pip3 install \
-    requests \
-    beautifulsoup4 \
-    pandas \
-    numpy \
-    flask \
-    fastapi \
-    uvicorn
-
-# Создание рабочего пользователя с правильными UID/GID
-RUN groupadd -g $GID zetuser || true
-RUN useradd --uid $UID --gid $GID -m -s /bin/bash zetuser \
-    && echo "zetuser:zetpass" | chpasswd \
-    && usermod -aG sudo zetuser
-
-# Создание рабочих директорий
-RUN mkdir -p /workspace /projects /tmp/zet \
-    && chown -R zetuser:zetuser /projects /tmp/zet
-
-# Настройка sudo без пароля для zetuser
-RUN echo "zetuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
-# Переключение на рабочего пользователя
-USER zetuser
+# Рабочая директория
 WORKDIR /workspace
-
-# Настройка bash
-RUN echo 'export PS1="\[\033[36m\]zet-sandbox\[\033[0m\]:\[\033[32m\]\w\[\033[0m\]$ "' >> ~/.bashrc \
-    && echo 'alias ll="ls -la"' >> ~/.bashrc \
-    && echo 'alias la="ls -la"' >> ~/.bashrc
-
-# Создание информационного файла
-RUN echo "ZetGui Sandbox Container" > ~/README.txt \
-    && echo "======================" >> ~/README.txt \
-    && echo "Node.js: $(node --version)" >> ~/README.txt \
-    && echo "npm: $(npm --version)" >> ~/README.txt \
-    && echo "Python: $(python3 --version)" >> ~/README.txt \
-    && echo "Build: $(date)" >> ~/README.txt
-
-# Порты для веб-приложений
-EXPOSE 3000 8000 8080 5000
 
 # Команда по умолчанию
 CMD ["/bin/bash"]
 '@
-        
-        $dockerfileContent | Out-File -FilePath $DOCKERFILE_PATH -Encoding UTF8
-        log_success "Dockerfile создан: $DOCKERFILE_PATH"
-    } else {
-        log_success "Dockerfile уже существует: $DOCKERFILE_PATH"
-    }
+    
+    $dockerfileContent | Out-File -FilePath $DOCKERFILE_PATH -Encoding UTF8
+    log_success "Простой Dockerfile создан: $DOCKERFILE_PATH"
 }
 
 # Сборка Docker образа
 function Build-DockerImage {
-    param($SystemInfo)
-    
+    param([switch]$Rebuild)
     log_step "Сборка Docker образа..."
     
-    # Удаляем старый образ если существует
+    $imageExists = $false
     try {
-        docker image inspect $IMAGE_NAME *>$null
-        log_info "Удаляю старый образ..."
-        docker rmi $IMAGE_NAME *>$null
+        $null = docker image inspect $IMAGE_NAME
+        $imageExists = $true
     } catch {
-        # Образ не существует, продолжаем
+        # Образ не найден
     }
-    
-    log_info "Собираю образ: $IMAGE_NAME"
-    log_info "Архитектура: $($SystemInfo.DockerArch)"
-    
-    $dockerDir = Split-Path $DOCKERFILE_PATH -Parent
+
+    if ($imageExists -and -not $Rebuild) {
+        $choice = Read-Host "⚠  Образ $IMAGE_NAME уже существует. Пересобрать? (y/N)"
+        if ($choice -ne 'y') {
+            log_info "Пропуск сборки образа"
+            return
+        }
+    }
+
+    log_info "Запускаю сборку образа (это может занять время)..."
     
     try {
-        # Сборка с параметрами для текущей архитектуры
-        docker build `
-            --platform "linux/$($SystemInfo.DockerArch)" `
-            --tag $IMAGE_NAME `
-            --file $DOCKERFILE_PATH `
-            $dockerDir `
-            --progress=plain
-        
-        log_success "Образ собран успешно: $IMAGE_NAME"
-        
-        # Показываем информацию об образе
-        $imageInfo = docker images $IMAGE_NAME --format "{{.Size}}"
-        log_info "Размер образа: $imageInfo"
-        
-        return $true
+        docker build --no-cache -t $IMAGE_NAME -f $DOCKERFILE_PATH .
+        log_success "Docker образ '$IMAGE_NAME' успешно собран"
     } catch {
-        log_error "Ошибка сборки образа: $_"
-        return $false
+        log_error "Ошибка сборки Docker образа."
+        throw
     }
 }
 
@@ -506,78 +404,24 @@ function Remove-DockerResources {
 
 # Основная функция
 function Main {
-    $systemInfo = Get-SystemInfo
-    Write-Host ""
+    param([switch]$Rebuild)
+
+    Show-Logo
+    Test-Docker
     
-    switch ($Action) {
-        "setup" {
-            Write-Host ""
-            log_step "🎯 ZeroEnhanced Docker Container Setup"
-            Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
-            Write-Host ""
-            
-            if (-not (Test-Docker)) {
-                log_error "Docker не готов к работе"
-                exit 1
-            }
-            Write-Host ""
-            
-            if (-not (New-SandboxDirectory)) {
-                log_error "Не удалось создать sandbox директорию"
-                exit 1
-            }
-            Write-Host ""
-            
-            New-Dockerfile
-            Write-Host ""
-            
-            if (Build-DockerImage $systemInfo) {
-                Write-Host ""
-                if (New-Container) {
-                    Write-Host ""
-                    if (Test-Container) {
-                        Write-Host ""
-                        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
-                        log_success "🎉 Docker контейнер настроен и готов к работе!"
-                        Show-ContainerInfo
-                    } else {
-                        log_error "Тесты контейнера провалились"
-                        exit 1
-                    }
-                } else {
-                    log_error "Не удалось настроить контейнер"
-                    exit 1
-                }
-            } else {
-                log_error "Не удалось собрать образ"
-                exit 1
-            }
-        }
-        "info" {
-            $systemInfo = Get-SystemInfo
-            Show-ContainerInfo
-        }
-        "test" {
-            if (-not (Test-Container)) {
-                exit 1
-            }
-        }
-        "cleanup" {
-            Remove-DockerResources
-        }
-        "rebuild" {
-            log_step "Пересборка контейнера..."
-            Remove-DockerResources
-            Write-Host ""
-            $Action = "setup"
-            Main
-        }
-        default {
-            log_error "Неизвестная команда: $Action"
-            Write-Host "Используйте -Help для справки"
-            exit 1
-        }
-    }
+    New-Dockerfile
+    
+    Build-DockerImage -Rebuild:$Rebuild.IsPresent
+    
+    New-SandboxDirectory
+    
+    New-Container
+    
+    Test-Container
+    
+    Show-ContainerInfo
+    
+    log_success "Docker окружение готово к работе!"
 }
 
 # Справка
@@ -600,4 +444,4 @@ if ($Help) {
 }
 
 # Запуск
-Main 
+Main -Rebuild:$Rebuild 

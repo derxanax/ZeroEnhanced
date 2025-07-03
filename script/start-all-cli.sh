@@ -65,16 +65,6 @@ check_dependencies() {
         return 1
     fi
     
-    # Проверка TypeScript
-    if ! command -v tsc >/dev/null 2>&1; then
-        log_warning "TypeScript не найден глобально"
-        log_info "Попробую установить: npm install -g typescript"
-        if ! npm install -g typescript; then
-            log_error "Не удалось установить TypeScript"
-            return 1
-        fi
-    fi
-    
     # Проверка зависимостей проекта
     if [ ! -d "node_modules" ]; then
         log_warning "Зависимости проекта не установлены"
@@ -89,60 +79,10 @@ check_dependencies() {
     return 0
 }
 
-# Сборка проекта
-build_project() {
-    log_step "Сборка проекта"
-    
-    show_loading "Компиляция TypeScript" 2
-    
-    if [ -f "tsconfig.json" ]; then
-        if tsc; then
-            log_success "Проект собран успешно"
-            return 0
-        else
-            log_error "Ошибка сборки проекта"
-            return 1
-        fi
-    else
-        log_warning "tsconfig.json не найден - пропускаю сборку"
-        return 0
-    fi
-}
-
 # Запуск CLI приложения
 start_cli() {
     log_step "Запуск CLI терминала"
-    
-    # Проверяем наличие скомпилированных файлов
-    if [ -f "dist/main.js" ]; then
-        log_info "Запускаю скомпилированную версию"
-        show_loading "Инициализация терминала" 1
-        echo
-        log_success "Zet CLI готов к работе!"
-        echo
-        node dist/main.js
-    elif [ -f "src/main.ts" ]; then
-        log_info "Запускаю через ts-node"
-        
-        # Проверяем ts-node
-        if ! command -v ts-node >/dev/null 2>&1; then
-            log_warning "ts-node не найден, устанавливаю"
-            if ! npm install -g ts-node; then
-                log_error "Не удалось установить ts-node"
-        return 1
-    fi
-        fi
-        
-        show_loading "Инициализация терминала" 1
-        echo
-        log_success "Zet CLI готов к работе!"
-        echo
-        ts-node src/main.ts
-    else
-        log_error "Не найден main.js или main.ts файл"
-        log_info "Проверьте структуру проекта"
-        return 1
-    fi
+    npx ts-node src/main.ts
 }
 
 # Проверка окружения
@@ -184,12 +124,6 @@ main() {
     # Проверки
     if ! check_dependencies; then
         log_error "Не удалось проверить зависимости"
-        exit 1
-    fi
-    echo
-    
-    if ! build_project; then
-        log_error "Не удалось собрать проект"
         exit 1
     fi
     echo

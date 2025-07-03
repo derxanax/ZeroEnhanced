@@ -57,36 +57,29 @@ BACKEND_PORT=3001
 FRONTEND_PORT=3000
 
 # Проверка зависимостей
-check_dependencies() {
-    log_step "Проверка зависимостей"
+function check_web_dependencies() {
+    log_step "Проверяю Web зависимости..."
     
-    # Проверка Node.js
     if ! command -v node >/dev/null 2>&1; then
-        log_error "Node.js не найден"
-        log_info "Установите Node.js: https://nodejs.org/"
+        log_warning "Node.js не найден."
         return 1
     fi
-    
-    # Проверка npm
+    log_success "Node.js найден."
+
     if ! command -v npm >/dev/null 2>&1; then
-        log_error "npm не найден"
+        log_warning "npm не найден."
         return 1
     fi
-    
-    # Проверка зависимостей backend
-    if [ ! -d "backend/node_modules" ]; then
-        log_warning "Backend зависимости не установлены"
-        log_info "Устанавливаю backend зависимости"
-        cd backend && npm install && cd ..
+    log_success "npm найден."
+
+    if [ "$NO_DOCKER" = false ]; then
+        if ! command -v docker > /dev/null 2>&1 || ! docker info > /dev/null 2>&1; then
+            log_warning "Docker не найден или не запущен. Функциональность AI будет ограничена."
+        else
+            log_success "Docker найден и запущен."
+        fi
     fi
-    
-    # Проверка зависимостей frontend
-    if [ ! -d "desktop/react-src/node_modules" ]; then
-        log_warning "Frontend зависимости не установлены"
-        log_info "Устанавливаю frontend зависимости"
-        cd desktop/react-src && npm install && cd ../..
-    fi
-    
+
     log_success "Все зависимости в порядке"
     return 0
 }
@@ -181,89 +174,34 @@ build_frontend() {
 }
 
 # Запуск backend
-start_backend() {
-    log_step "Запуск backend сервера"
-    
-    cd backend
-    
-    # Проверяем наличие собранного файла
-    if [ -f "dist/server.js" ]; then
-        log_info "Запускаю собранный backend"
-        node dist/server.js > ../backend.log 2>&1 &
-        BACKEND_PID=$!
-    elif [ -f "src/server.ts" ]; then
-        log_info "Запускаю backend через ts-node"
-        if command -v ts-node >/dev/null 2>&1; then
-            ts-node src/server.ts > ../backend.log 2>&1 &
-            BACKEND_PID=$!
-        else
-            npx ts-node src/server.ts > ../backend.log 2>&1 &
-            BACKEND_PID=$!
-        fi
-    else
-        log_error "Не найден файл сервера backend"
-        cd ..
-        return 1
+function start_backend() {
+    log_step "Запускаю backend сервер..."
+    cd "backend"
+    local port=3001
+    if lsof -i:$port >/dev/null; then
+        log_error "Порт $port уже занят. Освободите его."
+        exit 1
     fi
-    
+    log_success "Backend запускается на порту $port..."
+    PORT=$port npx ts-node src/server.ts &
+    BACKEND_PID=$!
     cd ..
-    
-    # Ждем запуска backend
-    show_loading "Ожидание запуска backend" 3
-    
-    for i in {1..10}; do
-        if curl -s http://localhost:$BACKEND_PORT/health >/dev/null 2>&1; then
-            log_success "Backend запущен на порту $BACKEND_PORT (PID: $BACKEND_PID)"
-            return 0
-        fi
-        sleep 1
-    done
-    
-    log_error "Backend не запустился за 10 секунд"
-    return 1
+    sleep 3
+    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+        log_error "Backend не запустился."
+        exit 1
+    fi
+    log_success "🎉 Backend сервер запущен на порту $port!"
 }
 
 # Запуск frontend
-start_frontend() {
-    log_step "Запуск frontend сервера"
-    
-    cd desktop/react-src
-    
-    # Проверяем наличие собранного приложения
-    if [ -d "build" ] || [ -d "dist" ]; then
-        log_info "Запускаю статический сервер для собранного приложения"
-        
-        # Используем serve для статических файлов
-        if command -v serve >/dev/null 2>&1; then
-            serve -s build -l $FRONTEND_PORT > ../../frontend.log 2>&1 &
-            FRONTEND_PID=$!
-        else
-            log_info "Устанавливаю serve для статических файлов"
-            npm install -g serve >/dev/null 2>&1
-            serve -s build -l $FRONTEND_PORT > ../../frontend.log 2>&1 &
-            FRONTEND_PID=$!
-        fi
-    else
-        log_info "Запускаю frontend в dev режиме"
-        npm start > ../../frontend.log 2>&1 &
-        FRONTEND_PID=$!
-    fi
-    
-    cd ../..
-    
-    # Ждем запуска frontend
-    show_loading "Ожидание запуска frontend" 5
-    
-    for i in {1..20}; do
-        if curl -s http://localhost:$FRONTEND_PORT >/dev/null 2>&1; then
-            log_success "Frontend запущен на порту $FRONTEND_PORT (PID: $FRONTEND_PID)"
-            return 0
-        fi
-        sleep 1
-    done
-    
-    log_error "Frontend не запустился за 20 секунд"
-    return 1
+function start_frontend_dev_server() {
+    log_step "Запускаю frontend dev сервер..."
+    cd "desktop/react-src"
+    log_info "Frontend запускается на порту 3002..."
+    npm start &
+    FRONTEND_PID=$!
+    cd ..
 }
 
 # Открытие браузера
@@ -343,72 +281,29 @@ cleanup() {
 
 # Главная функция
 main() {
-    show_logo
+    trap cleanup EXIT SIGINT SIGTERM
     
+    show_logo
     log_info "Запуск веб-версии ZetGui"
-    echo
+    echo ""
     
     # Проверки
-    if ! check_dependencies; then
+    if ! check_web_dependencies; then
         exit 1
     fi
-    echo
+
+    # Установка зависимостей
+    install_node_modules "." "Core"
+    install_node_modules "backend" "Backend"
+    install_node_modules "desktop/react-src" "Frontend"
     
-    if ! check_ports; then
-        exit 1
-    fi
-    echo
+    start_backend
+    start_frontend_dev_server
     
-    # Сборка
-    build_backend
-    echo
+    log_info "Веб-сервер и backend запущены."
+    log_info "Нажмите Ctrl+C для завершения."
     
-    build_frontend
-    echo
-    
-    # Запуск серверов
-    if ! start_backend; then
-        log_error "Не удалось запустить backend"
-        exit 1
-    fi
-    echo
-    
-    if ! start_frontend; then
-        log_error "Не удалось запустить frontend"
-        cleanup
-        exit 1
-    fi
-    echo
-    
-    # Открытие браузера
-    sleep 2
-    open_browser
-    echo
-    
-    # Показ статуса
-    show_status
-    echo
-    
-    log_success "Все сервисы запущены!"
-    log_info "Нажмите Ctrl+C для остановки всех сервисов"
-    
-    # Ожидание завершения
-    while true; do
-        sleep 1
-        
-        # Проверяем что процессы еще живы
-        if [ ! -z "$BACKEND_PID" ] && ! kill -0 $BACKEND_PID 2>/dev/null; then
-            log_error "Backend процесс завершился неожиданно"
-            break
-        fi
-        
-        if [ ! -z "$FRONTEND_PID" ] && ! kill -0 $FRONTEND_PID 2>/dev/null; then
-            log_error "Frontend процесс завершился неожиданно"
-            break
-        fi
-    done
-    
-    cleanup
+    wait
 }
 
 # Проверка директории

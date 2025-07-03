@@ -119,62 +119,53 @@ trap cleanup EXIT
 trap cleanup SIGINT
 trap cleanup SIGTERM
 
+# Вспомогательная функция для проверки команд
+check_command() {
+    local cmd=$1
+    local version_str=$2
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        log_warning "$cmd не найден."
+        return 1
+    fi
+    log_success "$cmd найден."
+    return 0
+}
+
+# Проверка зависимостей GUI
 function check_gui_dependencies() {
     log_step "Проверяю GUI зависимости..."
-    
-    if ! command -v node >/dev/null 2>&1; then
-        log_warning "Node.js не найден, запускаю автоматическую установку..."
-        "$SCRIPT_DIR/install-all-Dependencies.sh"
-    fi
     
     local missing_deps=()
     
     check_command "node" "v18" || missing_deps+=("node")
     check_command "npm" "" || missing_deps+=("npm")
-    check_command "tsc" "" || missing_deps+=("typescript")
-    
-    if ! command -v neu >/dev/null 2>&1; then
-        log_warning "Neutralino CLI не найден, устанавливаю..."
-        npm install -g @neutralinojs/neu
-        if ! command -v neu >/dev/null 2>&1; then
-            log_error "Ошибка установки Neutralino CLI"
-            missing_deps+=("neutralino")
-        fi
-    fi
     
     if [ "$NO_DOCKER" = false ]; then
         check_docker_available || missing_deps+=("docker")
     fi
     
     if [ ${#missing_deps[@]} -gt 0 ]; then
-        log_warning "Отсутствующие зависимости: ${missing_deps[*]}"
-        log_step "Запускаю автоматическую установку..."
-        
-        "$SCRIPT_DIR/install-all-Dependencies.sh"
-        
-        log_step "Зависимости установлены, повторная проверка..."
-        for dep in "${missing_deps[@]}"; do
-            case $dep in
-                "node")
-                    check_command "node" "v18" || { log_error "Node.js все еще недоступен"; exit 1; }
-                    ;;
-                "npm")
-                    check_command "npm" "" || { log_error "npm все еще недоступен"; exit 1; }
-                    ;;
-                "typescript")
-                    check_command "tsc" "" || { log_error "TypeScript все еще недоступен"; exit 1; }
-                    ;;
-                "neutralino")
-                    command -v neu >/dev/null 2>&1 || { log_error "Neutralino все еще недоступен"; exit 1; }
-                    ;;
-                "docker")
-                    [ "$NO_DOCKER" = false ] && { check_docker_available || { log_error "Docker все еще недоступен"; exit 1; }; }
-                    ;;
-            esac
-        done
+        log_error "Отсутствуют следующие зависимости: ${missing_deps[*]}"
+        log_info "Пожалуйста, установите их и попробуйте снова."
+        exit 1
     fi
     
-    log_success "Все GUI зависимости проверены"
+    log_success "Все GUI зависимости в порядке"
+}
+
+# Функция для проверки доступности Docker
+function check_docker_available() {
+    log_step "Проверка доступности Docker"
+    if ! command -v docker > /dev/null 2>&1; then
+        log_warning "Docker не установлен."
+        return 1
+    fi
+    if ! docker info > /dev/null 2>&1; then
+        log_error "Docker демон не запущен. Пожалуйста, запустите Docker."
+        return 1
+    fi
+    log_success "Docker доступен и запущен."
+    return 0
 }
 
 function setup_docker_environment() {
@@ -227,29 +218,6 @@ function install_node_modules() {
     cd "$PROJECT_ROOT"
 }
 
-function build_typescript_projects() {
-    log_step "Собираю TypeScript проекты..."
-    
-    local projects=(
-        ".:/Core"
-        "backend:/Backend"
-        "desktop/react-src:/Desktop React"
-    )
-    
-    for project in "${projects[@]}"; do
-        local path="${project%:*}"
-        local name="${project#*:}"
-        
-        if [ -f "$path/tsconfig.json" ]; then
-            cd "$path"
-            log_info "Компилирую TypeScript в $name..."
-            npx tsc
-            log_success "$name скомпилирован"
-            cd "$PROJECT_ROOT"
-        fi
-    done
-}
-
 function build_react_app() {
     log_step "Собираю React приложение..."
     
@@ -268,15 +236,16 @@ function build_react_app() {
 
 function setup_neutralino() {
     log_step "Настраиваю Neutralino..."
-    
     cd "desktop"
     
-    if [ ! -d ".tmp" ]; then
-        log_info "Инициализирую Neutralino проект..."
-        neu update
+    # Запускаем через npx
+    if npx neu update; then
+        log_success "Neutralino обновлен"
+    else
+        log_error "Ошибка обновления Neutralino"
+        exit 1
     fi
     
-    log_success "Neutralino настроен"
     cd "$PROJECT_ROOT"
 }
 
@@ -285,55 +254,56 @@ function start_backend() {
     
     cd "backend"
     
-    if [ ! -f "dist/server.js" ]; then
-        log_warning "Компилированный backend не найден, компилирую..."
-        npx tsc
-    fi
-    
-    log_success "Backend сервер запускается на порту 3001..."
-    node dist/server.js &
-    BACKEND_PID=$!
-    
-    sleep 2
-    
-    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-        log_error "Backend сервер не запустился"
+    if [ ! -f "src/server.ts" ]; then
+        log_error "Не найден исходный файл backend: src/server.ts"
         exit 1
     fi
     
-    cd "$PROJECT_ROOT"
-}
+    local port=3001
+    # Проверяем, свободен ли порт
+    if lsof -i:$port >/dev/null; then
+        log_error "Порт $port уже занят. Пожалуйста, освободите его и попробуйте снова."
+        exit 1
+    fi
 
-function start_neutralino_app() {
-    log_step "Запускаю Neutralino desktop приложение..."
+    log_success "Backend сервер запускается на порту $port через ts-node..."
     
-    cd "desktop"
-    
-    log_success "🖥️ Запускаю GUI приложение..."
-    neu run &
-    NEUTRALINO_PID=$!
+    # Передаем порт через переменную окружения
+    PORT=$port npx ts-node src/server.ts &
+    BACKEND_PID=$!
     
     sleep 3
     
-    if ! kill -0 "$NEUTRALINO_PID" 2>/dev/null; then
-        log_error "Neutralino приложение не запустилось"
+    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+        log_error "Backend сервер не запустился на порту $port"
         exit 1
     fi
     
-    log_success "🎉 GUI приложение запущено!"
+    log_success "🎉 Backend сервер запущен на порту $port!"
     cd "$PROJECT_ROOT"
 }
 
-function main() {
+function start_gui() {
+    log_step "Запускаю Neutralino приложение..."
+    cd "desktop"
+    
+    # Запускаем через npx
+    npx neu run -- --window-enable-inspector
+    
+    cd "$PROJECT_ROOT"
+}
+
+# Главная функция
+main() {
+    trap cleanup EXIT SIGINT SIGTERM
+    
     echo "🖥️ Запуск ZeroEnhanced GUI..."
     echo "======================================"
     
     check_gui_dependencies
-    setup_docker_environment
     install_node_modules "." "Core"
     install_node_modules "backend" "Backend"
     install_node_modules "desktop/react-src" "Desktop React"
-    build_typescript_projects
     build_react_app
     setup_neutralino
     start_backend
@@ -342,7 +312,7 @@ function main() {
     log_success "🎉 Все компоненты готовы!"
     echo ""
     
-    start_neutralino_app
+    start_gui
     
     log_info "GUI приложение работает. Для завершения нажмите Ctrl+C"
     log_info "Backend API доступен на: http://localhost:3001"

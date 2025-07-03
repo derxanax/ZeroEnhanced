@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# ZetGui Docker Setup
-# Настройка Docker контейнера для песочницы
+# ZetGui Smart Docker Setup
+# Гарантированная пересборка окружения с фиксом для SELinux
 
 # Цвета для вывода
 RED='\033[0;31m'
@@ -19,19 +19,6 @@ log_warning() { echo -e "${YELLOW}⚠  $1${NC}"; }
 log_error() { echo -e "${RED}✗  $1${NC}"; }
 log_step() { echo -e "${PURPLE}*  $1${NC}"; }
 
-# Анимация загрузки
-show_loading() {
-    local message="$1"
-    local duration=${2:-3}
-    local chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-    
-    for ((i=0; i<duration*10; i++)); do
-        printf "\r${CYAN}${chars:i%10:1}  $message${NC}"
-        sleep 0.1
-    done
-    printf "\r${GREEN}✓  $message${NC}\n"
-}
-
 # Красивый логотип
 show_logo() {
     clear
@@ -43,183 +30,50 @@ show_logo() {
     echo "███████╗███████╗   ██║       ╚██████╔╝╚██████╔╝██║"
     echo "╚══════╝╚══════╝   ╚═╝        ╚═════╝  ╚═════╝ ╚═╝"
     echo -e "${NC}"
-    echo -e "${BLUE}Docker Setup Manager${NC}"
+    echo -e "${BLUE}Smart Docker Setup${NC}"
     echo -e "${BLUE}═══════════════════════════════════════════════════${NC}"
-    echo
 }
 
+# Переходим в корневую директорию проекта
+cd "$(dirname "$0")/.."
+
 # Константы
-DOCKER_IMAGE_NAME="zet-sandbox-image"
+DOCKER_IMAGE_NAME="zet-sandbox-image:latest"
 DOCKER_CONTAINER_NAME="zet-sandbox"
 DOCKERFILE_PATH="docker-sandbox/Dockerfile"
 
 # Проверка Docker
 check_docker() {
     log_step "Проверка Docker"
-    
-    if ! command -v docker >/dev/null 2>&1; then
-        log_error "Docker не найден в системе"
-        log_info "Установите Docker: https://docs.docker.com/get-docker/"
+    if ! command -v docker &> /dev/null; then
+        log_error "Docker не установлен."
         return 1
     fi
-    
-    if ! docker ps >/dev/null 2>&1; then
-        log_error "Docker daemon не запущен"
-        log_info "Запустите Docker daemon"
-        log_info "Linux: sudo systemctl start docker"
-        log_info "macOS/Windows: запустите Docker Desktop"
+    if ! docker info &> /dev/null; then
+        log_error "Docker daemon не запущен. Запустите Docker Desktop или выполните 'sudo systemctl start docker'."
         return 1
     fi
-    
     log_success "Docker готов к работе"
     return 0
 }
 
-# Проверка Dockerfile
-check_dockerfile() {
-    log_step "Проверка Dockerfile"
-    
-    if [ ! -f "$DOCKERFILE_PATH" ]; then
-        log_error "Dockerfile не найден: $DOCKERFILE_PATH"
-        log_info "Создаю базовый Dockerfile"
-        create_dockerfile
-    else
-        log_success "Dockerfile найден: $DOCKERFILE_PATH"
-    fi
-}
-
 # Создание Dockerfile
 create_dockerfile() {
-    log_step "Создание Dockerfile"
-        
-        mkdir -p "$(dirname "$DOCKERFILE_PATH")"
-        
-        cat > "$DOCKERFILE_PATH" << 'EOF'
-# ZetGui Sandbox Container
-# Безопасная среда выполнения для AI команд
-
+    log_step "Создание простого Dockerfile"
+    mkdir -p "$(dirname "$DOCKERFILE_PATH")"
+    cat > "$DOCKERFILE_PATH" << 'EOF'
 FROM ubuntu:22.04
-
-# Аргументы для UID/GID
-ARG UID=1000
-ARG GID=1000
-
-# Переменные окружения
-ENV DEBIAN_FRONTEND=noninteractive
-ENV NODE_VERSION=20
-ENV PYTHON_VERSION=3.11
-
-# Установка базовых пакетов
-RUN apt-get update && apt-get install -y \
-    curl \
-    wget \
-    git \
-    nano \
-    vim \
-    htop \
-    tree \
-    jq \
-    unzip \
-    zip \
-    build-essential \
-    python3 \
-    python3-pip \
-    python3-venv \
-    nodejs \
-    npm \
-    ca-certificates \
-    gnupg \
-    lsb-release \
-    software-properties-common \
-    sudo \
-    && rm -rf /var/lib/apt/lists/*
-
-# Установка Node.js LTS
-RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
-    && apt-get install -y nodejs
-
-# Обновление npm
-RUN npm install -g npm@latest
-
-# Установка полезных npm пакетов
-RUN npm install -g \
-    typescript \
-    ts-node \
-    nodemon \
-    prettier \
-    eslint
-
-# Установка Python пакетов
-RUN pip3 install --upgrade pip setuptools wheel \
-    && pip3 install \
-    requests \
-    beautifulsoup4 \
-    pandas \
-    numpy \
-    flask \
-    fastapi \
-    uvicorn
-
-# Создание рабочего пользователя с правильными UID/GID
-RUN groupadd -g $GID zetuser || true
-RUN useradd --uid $UID --gid $GID -m -s /bin/bash zetuser \
-    && echo "zetuser:zetpass" | chpasswd \
-    && usermod -aG sudo zetuser
-
-# Создание рабочих директорий
-RUN mkdir -p /workspace /projects /tmp/zet \
-    && chown -R zetuser:zetuser /projects /tmp/zet
-
-# Настройка sudo без пароля для zetuser
-RUN echo "zetuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
-# Переключение на рабочего пользователя
-USER zetuser
+RUN apt-get update && apt-get install -y curl git sudo && rm -rf /var/lib/apt/lists/*
 WORKDIR /workspace
-
-# Настройка bash
-RUN echo 'export PS1="\[\033[36m\]zet-sandbox\[\033[0m\]:\[\033[32m\]\w\[\033[0m\]$ "' >> ~/.bashrc \
-    && echo 'alias ll="ls -la"' >> ~/.bashrc \
-    && echo 'alias la="ls -la"' >> ~/.bashrc
-
-# Создание информационного файла
-RUN echo "ZetGui Sandbox Container" > ~/README.txt \
-    && echo "======================" >> ~/README.txt \
-    && echo "Node.js: $(node --version)" >> ~/README.txt \
-    && echo "npm: $(npm --version)" >> ~/README.txt \
-    && echo "Python: $(python3 --version)" >> ~/README.txt \
-    && echo "Build: $(date)" >> ~/README.txt
-
-# Порты для веб-приложений
-EXPOSE 3000 8000 8080 5000
-
-# Команда по умолчанию
 CMD ["/bin/bash"]
 EOF
-        
-        log_success "Dockerfile создан: $DOCKERFILE_PATH"
+    log_success "Простой Dockerfile создан: $DOCKERFILE_PATH"
 }
 
 # Сборка Docker образа
 build_image() {
-    log_step "Сборка Docker образа"
-    
-    if docker images | grep -q "$DOCKER_IMAGE_NAME"; then
-        log_warning "Образ $DOCKER_IMAGE_NAME уже существует"
-        read -p "Пересобрать образ? (y/N): " choice
-        if [[ ! "$choice" =~ ^[Yy]$ ]]; then
-            log_info "Пропускаю сборку образа"
-            return 0
-        fi
-    fi
-    
-    show_loading "Сборка Docker образа" 5
-    
-    if docker build \
-        --build-arg UID=$(id -u) \
-        --build-arg GID=$(id -g) \
-        -t "$DOCKER_IMAGE_NAME" \
-        -f "$DOCKERFILE_PATH" .; then
+    log_step "Сборка Docker образа (флаг --no-cache)"
+    if docker build --no-cache -t "$DOCKER_IMAGE_NAME" -f "$DOCKERFILE_PATH" .; then
         log_success "Docker образ собран: $DOCKER_IMAGE_NAME"
         return 0
     else
@@ -228,233 +82,92 @@ build_image() {
     fi
 }
 
-# Создание контейнера
-create_container() {
-    log_step "Создание Docker контейнера"
-    
-    if docker ps -a | grep -q "$DOCKER_CONTAINER_NAME"; then
-        log_warning "Контейнер $DOCKER_CONTAINER_NAME уже существует"
-        
-        local status=$(docker inspect -f '{{.State.Status}}' "$DOCKER_CONTAINER_NAME" 2>/dev/null)
-        case "$status" in
-            "running")
-                log_success "Контейнер уже запущен"
-                return 0
-                ;;
-            "exited")
-                log_info "Запускаю остановленный контейнер"
-                if docker start "$DOCKER_CONTAINER_NAME"; then
-            log_success "Контейнер запущен"
-            return 0
-        else
-            log_error "Не удалось запустить контейнер"
-            return 1
-        fi
-                ;;
-            *)
-                log_warning "Контейнер в состоянии: $status"
-                read -p "Пересоздать контейнер? (y/N): " choice
-                if [[ "$choice" =~ ^[Yy]$ ]]; then
-                    log_info "Удаляю старый контейнер"
-                    docker rm -f "$DOCKER_CONTAINER_NAME" >/dev/null 2>&1
-                else
-                    return 0
-                fi
-                ;;
-        esac
-    fi
-    
-    log_info "Создаю новый контейнер"
-    show_loading "Создание контейнера" 2
-    
-    if docker run -d \
-        --name "$DOCKER_CONTAINER_NAME" \
-        --network bridge \
-        -v "$(pwd)/sandbox:/workspace/sandbox" \
-        "$DOCKER_IMAGE_NAME" \
-        tail -f /dev/null; then
-        log_success "Контейнер создан и запущен: $DOCKER_CONTAINER_NAME"
-        return 0
-    else
-        log_error "Ошибка создания контейнера"
-        return 1
-    fi
-}
-
 # Создание директории sandbox
 create_sandbox_directory() {
-    log_step "Создание директории sandbox"
-    
+    log_step "Подготовка директории sandbox"
     if [ ! -d "sandbox" ]; then
         mkdir -p sandbox
-        log_success "Директория sandbox создана"
-    else
-        log_success "Директория sandbox уже существует"
+        log_info "Директория sandbox создана"
     fi
-    
-    # Создаем тестовый файл
     if [ ! -f "sandbox/README.md" ]; then
-        cat > "sandbox/README.md" << 'EOF'
-# ZetGui Sandbox
-
-Эта директория монтируется в Docker контейнер для безопасного выполнения кода.
-
-## Структура
-- `/workspace/sandbox/` - рабочая директория в контейнере
-- Все файлы здесь доступны из контейнера
-
-## Использование
-Весь код, который выполняется через AI, будет запускаться в изолированном контейнере.
-EOF
-        log_success "Файл README.md создан в sandbox/"
+        echo "# Sandbox" > sandbox/README.md
+        echo "This directory is mounted into the container at /workspace" >> sandbox/README.md
     fi
+    log_success "Директория sandbox готова"
 }
 
-# Тестирование контейнера
-test_container() {
-    log_step "Тестирование контейнера"
-    
-    show_loading "Проверка работы контейнера" 2
-    
-    # Тест 1: Основные команды
-    if docker exec "$DOCKER_CONTAINER_NAME" echo "Hello from container" >/dev/null 2>&1; then
-        log_success "Базовые команды работают"
-    else
-        log_error "Ошибка выполнения команд в контейнере"
-        return 1
+# Применение SELinux контекста
+handle_selinux() {
+    if command -v sestatus &> /dev/null && sestatus | grep -q "SELinux status:[[:space:]]*enabled"; then
+        log_step "Обнаружен SELinux. Применяю контекст безопасности..."
+        if ! chcon -Rt container_file_t sandbox; then
+            log_warning "Не удалось применить 'chcon'. Попробую с 'sudo'."
+            if ! sudo chcon -Rt container_file_t sandbox; then
+                log_error "Не удалось применить SELinux контекст даже с sudo."
+                log_info "Возможно, потребуется выполнить 'sudo chcon -Rt container_file_t sandbox' вручную."
+                return 1
+            fi
+        fi
+        log_success "SELinux контекст 'container_file_t' применен к директории 'sandbox'."
     fi
-    
-    # Тест 2: Python
-    if docker exec "$DOCKER_CONTAINER_NAME" python3 --version >/dev/null 2>&1; then
-        log_success "Python3 доступен"
-    else
-        log_warning "Python3 недоступен"
-    fi
-    
-    # Тест 3: Node.js
-    if docker exec "$DOCKER_CONTAINER_NAME" node --version >/dev/null 2>&1; then
-        log_success "Node.js доступен"
-    else
-        log_warning "Node.js недоступен"
-    fi
-    
-    # Тест 4: Монтирование
-    local test_file="sandbox/docker_test_$(date +%s).txt"
-    echo "Test content" > "$test_file"
-    
-    if docker exec "$DOCKER_CONTAINER_NAME" cat "/workspace/$(basename "$test_file")" >/dev/null 2>&1; then
-        log_success "Монтирование работает"
-        rm -f "$test_file"
-    else
-        log_error "Ошибка монтирования директории"
-        rm -f "$test_file"
-        return 1
-    fi
-    
     return 0
 }
 
-# Показать информацию о контейнере
-show_container_info() {
-    log_step "Информация о контейнере"
-    echo
+# Пересоздание контейнера
+recreate_container() {
+    log_step "Пересоздание Docker контейнера"
     
-    local image_size=$(docker images --format "table {{.Size}}" --filter "reference=$DOCKER_IMAGE_NAME" | tail -n 1)
-    log_info "Образ: $DOCKER_IMAGE_NAME ($image_size)"
+    if docker ps -a --format '{{.Names}}' | grep -q "^${DOCKER_CONTAINER_NAME}$"; then
+        log_warning "Контейнер $DOCKER_CONTAINER_NAME уже существует. Принудительно удаляю..."
+        if ! docker rm -f "$DOCKER_CONTAINER_NAME"; then
+            log_error "Не удалось удалить старый контейнер. Попробую с sudo."
+            sudo docker rm -f "$DOCKER_CONTAINER_NAME"
+        fi
+        log_success "Старый контейнер удален"
+    fi
     
-    local container_status=$(docker inspect -f '{{.State.Status}}' "$DOCKER_CONTAINER_NAME" 2>/dev/null)
-    log_info "Контейнер: $DOCKER_CONTAINER_NAME ($container_status)"
+    log_info "Создаю новый контейнер..."
     
-    local sandbox_path=$(realpath sandbox 2>/dev/null)
-    log_info "Sandbox: $sandbox_path"
-        
-    echo
-    log_info "Команды для работы:"
-    echo -e "  ${BLUE}Войти в контейнер:${NC} docker exec -it $DOCKER_CONTAINER_NAME bash"
-    echo -e "  ${BLUE}Остановить:${NC} docker stop $DOCKER_CONTAINER_NAME"
-    echo -e "  ${BLUE}Запустить:${NC} docker start $DOCKER_CONTAINER_NAME"
-    echo -e "  ${BLUE}Удалить:${NC} docker rm -f $DOCKER_CONTAINER_NAME"
+    if ! docker run -d --name "$DOCKER_CONTAINER_NAME" -v "$(pwd)/sandbox:/workspace:z" -it "$DOCKER_IMAGE_NAME" /bin/bash; then
+        log_error "Ошибка создания контейнера"
+        return 1
+    fi
+    
+    log_success "Контейнер создан и запущен: $DOCKER_CONTAINER_NAME"
+    return 0
 }
 
 # Главная функция
 main() {
     show_logo
-    
-    log_info "Начинаю настройку Docker окружения"
+    log_info "Начинаю полную пересборку Docker окружения"
     echo
     
-    # Проверки
-    if ! check_docker; then
-        exit 1
-                fi
-                echo
-            
-    check_dockerfile
+    if ! check_docker; then exit 1; fi
     echo
-            
-    # Сборка и создание
-    if ! build_image; then
-                exit 1
-            fi
+
+    create_dockerfile
+    echo
+    
+    if ! build_image; then exit 1; fi
     echo
     
     create_sandbox_directory
     echo
     
-    if ! create_container; then
-        exit 1
+    if ! handle_selinux; then 
+        log_warning "Продолжаю без настройки SELinux, но могут быть проблемы с доступом."
     fi
     echo
     
-    # Тестирование
-    if ! test_container; then
-        log_warning "Некоторые тесты не прошли, но контейнер создан"
-    else
-        log_success "Все тесты пройдены успешно"
-    fi
+    if ! recreate_container; then exit 1; fi
     echo
-    
-                            show_container_info
-                            echo
-    
-    log_success "Docker окружение готово к работе!"
+
+    log_success "Docker окружение полностью пересобрано и готово к работе!"
+    echo
+    log_info "Для входа в контейнер: docker exec -it zet-sandbox bash"
+    log_info "После этого команда 'ls' в контейнере должна работать."
 }
-
-# Проверка директории
-check_directory() {
-    if [ ! -f "package.json" ]; then
-        log_error "Скрипт должен запускаться из корневой директории проекта"
-        log_info "Перейдите в директорию с package.json"
-                        exit 1
-                    fi
-}
-
-# Обработка аргументов
-case "${1:-}" in
-    --rebuild|-r)
-        log_info "Режим пересборки образа"
-        docker rmi -f "$DOCKER_IMAGE_NAME" 2>/dev/null || true
-        ;;
-    --clean|-c)
-        log_info "Очистка Docker ресурсов"
-        docker rm -f "$DOCKER_CONTAINER_NAME" 2>/dev/null || true
-        docker rmi -f "$DOCKER_IMAGE_NAME" 2>/dev/null || true
-        log_success "Очистка завершена"
-        exit 0
-        ;;
-    --help|-h)
-        echo "Использование: $0 [опции]"
-        echo "Опции:"
-        echo "  --rebuild, -r    Пересобрать Docker образ"
-        echo "  --clean, -c      Удалить контейнер и образ"
-        echo "  --help, -h       Показать эту справку"
-        exit 0
-            ;;
-    esac
-
-# Обработка Ctrl+C
-trap 'echo; log_info "Прерывание настройки"; exit 0' INT
 
 # Запуск
-check_directory
 main "$@" 

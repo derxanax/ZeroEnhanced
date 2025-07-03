@@ -126,71 +126,10 @@ function Test-Dependencies {
     return $true
 }
 
-# Сборка проекта
-function Build-Project {
-    Write-LogStep "Сборка проекта"
-    
-    Show-Loading "Компиляция TypeScript" 2
-    
-    if (Test-Path "tsconfig.json") {
-        try {
-            tsc | Out-Null
-            Write-LogSuccess "Проект собран успешно"
-            return $true
-        } catch {
-            Write-LogError "Ошибка сборки проекта"
-            return $false
-        }
-    } else {
-        Write-LogWarning "tsconfig.json не найден - пропускаю сборку"
-        return $true
-        }
-    }
-
 # Запуск CLI приложения
 function Start-CliApp {
     Write-LogStep "Запуск CLI терминала"
-    
-    # Проверяем наличие скомпилированных файлов
-    if (Test-Path "dist/main.js") {
-        Write-LogInfo "Запускаю скомпилированную версию"
-        Show-Loading "Инициализация терминала" 1
-        Write-Host ""
-        Write-LogSuccess "Zet CLI готов к работе!"
-        Write-Host ""
-        node "dist/main.js"
-    } elseif (Test-Path "src/main.ts") {
-        Write-LogInfo "Запускаю через ts-node"
-    
-        # Проверяем ts-node
-        try {
-            $tsNodeVersion = ts-node --version 2>$null
-            if (-not $tsNodeVersion) {
-                Write-LogWarning "ts-node не найден, устанавливаю"
-                npm install -g ts-node | Out-Null
-            }
-        } catch {
-            Write-LogWarning "ts-node не найден, устанавливаю"
-            try {
-                npm install -g ts-node | Out-Null
-            } catch {
-                Write-LogError "Не удалось установить ts-node"
-                return $false
-        }
-    }
-    
-        Show-Loading "Инициализация терминала" 1
-        Write-Host ""
-        Write-LogSuccess "Zet CLI готов к работе!"
-        Write-Host ""
-        ts-node "src/main.ts"
-    } else {
-        Write-LogError "Не найден main.js или main.ts файл"
-        Write-LogInfo "Проверьте структуру проекта"
-        return $false
-    }
-    
-    return $true
+    npx ts-node src/main.ts
 }
 
 # Проверка окружения
@@ -231,12 +170,6 @@ function Start-Main {
     # Проверки
     if (-not (Test-Dependencies)) {
         Write-LogError "Не удалось проверить зависимости"
-        exit 1
-    }
-    Write-Host ""
-    
-    if (-not (Build-Project)) {
-        Write-LogError "Не удалось собрать проект"
         exit 1
     }
     Write-Host ""
