@@ -96,33 +96,105 @@ create_dockerfile() {
         
         cat > "$DOCKERFILE_PATH" << 'EOF'
 # ZetGui Sandbox Container
+# Безопасная среда выполнения для AI команд
+
 FROM ubuntu:22.04
 
-# Установка основных пакетов
+# Аргументы для UID/GID
+ARG UID=1000
+ARG GID=1000
+
+# Переменные окружения
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NODE_VERSION=20
+ENV PYTHON_VERSION=3.11
+
+# Установка базовых пакетов
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
     git \
-    vim \
     nano \
+    vim \
+    htop \
+    tree \
+    jq \
+    unzip \
+    zip \
+    build-essential \
     python3 \
     python3-pip \
+    python3-venv \
     nodejs \
     npm \
-    build-essential \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    software-properties-common \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# Создание рабочей директории
+# Установка Node.js LTS
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
+    && apt-get install -y nodejs
+
+# Обновление npm
+RUN npm install -g npm@latest
+
+# Установка полезных npm пакетов
+RUN npm install -g \
+    typescript \
+    ts-node \
+    nodemon \
+    prettier \
+    eslint
+
+# Установка Python пакетов
+RUN pip3 install --upgrade pip setuptools wheel \
+    && pip3 install \
+    requests \
+    beautifulsoup4 \
+    pandas \
+    numpy \
+    flask \
+    fastapi \
+    uvicorn
+
+# Создание рабочего пользователя с правильными UID/GID
+RUN groupadd -g $GID zetuser || true
+RUN useradd --uid $UID --gid $GID -m -s /bin/bash zetuser \
+    && echo "zetuser:zetpass" | chpasswd \
+    && usermod -aG sudo zetuser
+
+# Создание рабочих директорий
+RUN mkdir -p /workspace /projects /tmp/zet \
+    && chown -R zetuser:zetuser /projects /tmp/zet
+
+# Настройка sudo без пароля для zetuser
+RUN echo "zetuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Переключение на рабочего пользователя
+USER zetuser
 WORKDIR /workspace
 
-# Создание пользователя sandbox
-RUN useradd -m -s /bin/bash sandbox && \
-    chown -R sandbox:sandbox /workspace
+# Настройка bash
+RUN echo 'export PS1="\[\033[36m\]zet-sandbox\[\033[0m\]:\[\033[32m\]\w\[\033[0m\]$ "' >> ~/.bashrc \
+    && echo 'alias ll="ls -la"' >> ~/.bashrc \
+    && echo 'alias la="ls -la"' >> ~/.bashrc
 
-USER sandbox
+# Создание информационного файла
+RUN echo "ZetGui Sandbox Container" > ~/README.txt \
+    && echo "======================" >> ~/README.txt \
+    && echo "Node.js: $(node --version)" >> ~/README.txt \
+    && echo "npm: $(npm --version)" >> ~/README.txt \
+    && echo "Python: $(python3 --version)" >> ~/README.txt \
+    && echo "Build: $(date)" >> ~/README.txt
+
+# Порты для веб-приложений
+EXPOSE 3000 8000 8080 5000
 
 # Команда по умолчанию
-CMD ["bash"]
+CMD ["/bin/bash"]
 EOF
         
         log_success "Dockerfile создан: $DOCKERFILE_PATH"
@@ -143,7 +215,11 @@ build_image() {
     
     show_loading "Сборка Docker образа" 5
     
-    if docker build -t "$DOCKER_IMAGE_NAME" -f "$DOCKERFILE_PATH" .; then
+    if docker build \
+        --build-arg UID=$(id -u) \
+        --build-arg GID=$(id -g) \
+        -t "$DOCKER_IMAGE_NAME" \
+        -f "$DOCKERFILE_PATH" .; then
         log_success "Docker образ собран: $DOCKER_IMAGE_NAME"
         return 0
     else

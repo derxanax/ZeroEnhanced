@@ -172,6 +172,10 @@ function New-Dockerfile {
 
 FROM ubuntu:22.04
 
+# Аргументы для UID/GID
+ARG UID=1000
+ARG GID=1000
+
 # Переменные окружения
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NODE_VERSION=20
@@ -199,6 +203,7 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     lsb-release \
     software-properties-common \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # Установка Node.js LTS
@@ -227,14 +232,15 @@ RUN pip3 install --upgrade pip setuptools wheel \
     fastapi \
     uvicorn
 
-# Создание рабочего пользователя
-RUN useradd -m -s /bin/bash zetuser \
+# Создание рабочего пользователя с правильными UID/GID
+RUN groupadd -g $GID zetuser || true
+RUN useradd --uid $UID --gid $GID -m -s /bin/bash zetuser \
     && echo "zetuser:zetpass" | chpasswd \
     && usermod -aG sudo zetuser
 
 # Создание рабочих директорий
 RUN mkdir -p /workspace /projects /tmp/zet \
-    && chown -R zetuser:zetuser /workspace /projects /tmp/zet
+    && chown -R zetuser:zetuser /projects /tmp/zet
 
 # Настройка sudo без пароля для zetuser
 RUN echo "zetuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
