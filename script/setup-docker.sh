@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# 🐳 ZeroEnhanced Docker Setup Script
-# Автоматическая настройка Docker образа и контейнера
+# ZetGui Docker Setup
+# Настройка Docker контейнера для песочницы
 
 # Цвета для вывода
 RED='\033[0;31m'
@@ -10,351 +10,375 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # Функции для красивого вывода
-log_info() { echo -e "${CYAN}ℹ️  $1${NC}"; }
-log_success() { echo -e "${GREEN}✅ $1${NC}"; }
-log_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
-log_error() { echo -e "${RED}❌ $1${NC}"; }
-log_step() { echo -e "${PURPLE}🔥 $1${NC}"; }
+log_info() { echo -e "${CYAN}ℹ  $1${NC}"; }
+log_success() { echo -e "${GREEN}✓  $1${NC}"; }
+log_warning() { echo -e "${YELLOW}⚠  $1${NC}"; }
+log_error() { echo -e "${RED}✗  $1${NC}"; }
+log_step() { echo -e "${PURPLE}*  $1${NC}"; }
+
+# Анимация загрузки
+show_loading() {
+    local message="$1"
+    local duration=${2:-3}
+    local chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    
+    for ((i=0; i<duration*10; i++)); do
+        printf "\r${CYAN}${chars:i%10:1}  $message${NC}"
+        sleep 0.1
+    done
+    printf "\r${GREEN}✓  $message${NC}\n"
+}
+
+# Красивый логотип
+show_logo() {
+    clear
+    echo -e "${CYAN}"
+    echo "██████╗ ███████╗████████╗     ██████╗ ██╗   ██╗██╗"
+    echo "╚════██╗██╔════╝╚══██╔══╝    ██╔════╝ ██║   ██║██║"
+    echo " █████╔╝█████╗     ██║       ██║  ███╗██║   ██║██║"
+    echo "██╔═══╝ ██╔══╝     ██║       ██║   ██║██║   ██║██║"
+    echo "███████╗███████╗   ██║       ╚██████╔╝╚██████╔╝██║"
+    echo "╚══════╝╚══════╝   ╚═╝        ╚═════╝  ╚═════╝ ╚═╝"
+    echo -e "${NC}"
+    echo -e "${BLUE}Docker Setup Manager${NC}"
+    echo -e "${BLUE}═══════════════════════════════════════════════════${NC}"
+    echo
+}
 
 # Константы
 DOCKER_IMAGE_NAME="zet-sandbox-image"
-SANDBOX_CONTAINER_NAME="zet-sandbox"
-DOCKERFILE_PATH="./docker-sandbox/Dockerfile"
-SANDBOX_DIR="./sandbox"
-
-# Переходим в корневую директорию проекта
-cd "$(dirname "$0")/.."
+DOCKER_CONTAINER_NAME="zet-sandbox"
+DOCKERFILE_PATH="docker-sandbox/Dockerfile"
 
 # Проверка Docker
 check_docker() {
-    log_step "Проверка Docker..."
+    log_step "Проверка Docker"
     
-    if ! command -v docker &> /dev/null; then
-        log_error "Docker не установлен!"
-        log_info "Установите Docker: ./script/install-system-packages.sh"
-        exit 1
+    if ! command -v docker >/dev/null 2>&1; then
+        log_error "Docker не найден в системе"
+        log_info "Установите Docker: https://docs.docker.com/get-docker/"
+        return 1
     fi
     
-    if ! docker ps &> /dev/null; then
-        log_error "Docker daemon не запущен!"
-        log_info "Запустите Docker: sudo systemctl start docker"
-        exit 1
+    if ! docker ps >/dev/null 2>&1; then
+        log_error "Docker daemon не запущен"
+        log_info "Запустите Docker daemon"
+        log_info "Linux: sudo systemctl start docker"
+        log_info "macOS/Windows: запустите Docker Desktop"
+        return 1
     fi
     
     log_success "Docker готов к работе"
+    return 0
 }
 
-# Проверка существования образа
-check_image_exists() {
-    docker image inspect "$DOCKER_IMAGE_NAME:latest" &> /dev/null
-}
-
-# Проверка существования контейнера
-check_container_exists() {
-    docker container inspect "$SANDBOX_CONTAINER_NAME" &> /dev/null
-}
-
-# Проверка что контейнер запущен
-check_container_running() {
-    local status=$(docker inspect -f '{{.State.Running}}' "$SANDBOX_CONTAINER_NAME" 2>/dev/null)
-    [ "$status" = "true" ]
-}
-
-# Создание sandbox директории
-create_sandbox_dir() {
-    log_step "Создание sandbox директории..."
-    
-    if [ ! -d "$SANDBOX_DIR" ]; then
-        mkdir -p "$SANDBOX_DIR"
-        log_success "Директория $SANDBOX_DIR создана"
-    else
-        log_info "Директория $SANDBOX_DIR уже существует"
-    fi
-    
-    # Создаем тестовый файл
-    if [ ! -f "$SANDBOX_DIR/README.md" ]; then
-        cat > "$SANDBOX_DIR/README.md" << 'EOF'
-# ZetGui Sandbox
-
-Эта директория монтируется в Docker контейнер как `/workspace`.
-
-Здесь вы можете:
-- Создавать и редактировать файлы через AI
-- Выполнять команды в безопасной среде
-- Тестировать код без риска для основной системы
-
-## Структура
-
-```
-sandbox/
-├── README.md     # Этот файл
-├── projects/     # Ваши проекты (создается автоматически)
-└── temp/         # Временные файлы
-```
-
-Все файлы здесь доступны в контейнере по пути `/workspace/`.
-EOF
-        
-        mkdir -p "$SANDBOX_DIR/projects"
-        mkdir -p "$SANDBOX_DIR/temp"
-        log_success "Создан базовый README и структура директорий"
-    fi
-}
-
-# Сборка Docker образа
-build_docker_image() {
-    log_step "Сборка Docker образа..."
+# Проверка Dockerfile
+check_dockerfile() {
+    log_step "Проверка Dockerfile"
     
     if [ ! -f "$DOCKERFILE_PATH" ]; then
         log_error "Dockerfile не найден: $DOCKERFILE_PATH"
-        exit 1
+        log_info "Создаю базовый Dockerfile"
+        create_dockerfile
+    else
+        log_success "Dockerfile найден: $DOCKERFILE_PATH"
+    fi
+}
+
+# Создание Dockerfile
+create_dockerfile() {
+    log_step "Создание Dockerfile"
+    
+    mkdir -p "$(dirname "$DOCKERFILE_PATH")"
+    
+    cat > "$DOCKERFILE_PATH" << 'EOF'
+# ZetGui Sandbox Container
+FROM ubuntu:22.04
+
+# Установка основных пакетов
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    git \
+    vim \
+    nano \
+    python3 \
+    python3-pip \
+    nodejs \
+    npm \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Создание рабочей директории
+WORKDIR /workspace
+
+# Создание пользователя sandbox
+RUN useradd -m -s /bin/bash sandbox && \
+    chown -R sandbox:sandbox /workspace
+
+USER sandbox
+
+# Команда по умолчанию
+CMD ["bash"]
+EOF
+    
+    log_success "Dockerfile создан: $DOCKERFILE_PATH"
+}
+
+# Сборка Docker образа
+build_image() {
+    log_step "Сборка Docker образа"
+    
+    if docker images | grep -q "$DOCKER_IMAGE_NAME"; then
+        log_warning "Образ $DOCKER_IMAGE_NAME уже существует"
+        read -p "Пересобрать образ? (y/N): " choice
+        if [[ ! "$choice" =~ ^[Yy]$ ]]; then
+            log_info "Пропускаю сборку образа"
+            return 0
+        fi
     fi
     
-    log_info "Собираю образ $DOCKER_IMAGE_NAME:latest..."
-    if docker build -t "$DOCKER_IMAGE_NAME:latest" -f "$DOCKERFILE_PATH" "./docker-sandbox/" --no-cache; then
-        log_success "Образ $DOCKER_IMAGE_NAME:latest собран успешно"
+    show_loading "Сборка Docker образа" 5
+    
+    if docker build -t "$DOCKER_IMAGE_NAME" -f "$DOCKERFILE_PATH" .; then
+        log_success "Docker образ собран: $DOCKER_IMAGE_NAME"
+        return 0
     else
         log_error "Ошибка сборки Docker образа"
-        exit 1
+        return 1
     fi
 }
 
-# Создание и запуск контейнера
+# Создание контейнера
 create_container() {
-    log_step "Создание Docker контейнера..."
+    log_step "Создание Docker контейнера"
     
-    # Останавливаем и удаляем существующий контейнер если есть
-    if check_container_exists; then
-        log_info "Останавливаю существующий контейнер..."
-        docker stop "$SANDBOX_CONTAINER_NAME" 2>/dev/null || true
-        docker rm "$SANDBOX_CONTAINER_NAME" 2>/dev/null || true
+    if docker ps -a | grep -q "$DOCKER_CONTAINER_NAME"; then
+        log_warning "Контейнер $DOCKER_CONTAINER_NAME уже существует"
+        
+        local status=$(docker inspect -f '{{.State.Status}}' "$DOCKER_CONTAINER_NAME" 2>/dev/null)
+        case "$status" in
+            "running")
+                log_success "Контейнер уже запущен"
+                return 0
+                ;;
+            "exited")
+                log_info "Запускаю остановленный контейнер"
+                if docker start "$DOCKER_CONTAINER_NAME"; then
+                    log_success "Контейнер запущен"
+                    return 0
+                else
+                    log_error "Не удалось запустить контейнер"
+                    return 1
+                fi
+                ;;
+            *)
+                log_warning "Контейнер в состоянии: $status"
+                read -p "Пересоздать контейнер? (y/N): " choice
+                if [[ "$choice" =~ ^[Yy]$ ]]; then
+                    log_info "Удаляю старый контейнер"
+                    docker rm -f "$DOCKER_CONTAINER_NAME" >/dev/null 2>&1
+                else
+                    return 0
+                fi
+                ;;
+        esac
     fi
     
-    # Создаем новый контейнер
-    log_info "Создаю новый контейнер $SANDBOX_CONTAINER_NAME..."
+    log_info "Создаю новый контейнер"
+    show_loading "Создание контейнера" 2
     
-    local absolute_sandbox_path=$(realpath "$SANDBOX_DIR")
-    
-    if docker create \
-        --name "$SANDBOX_CONTAINER_NAME" \
-        --tty \
-        --interactive \
-        --workdir "/workspace" \
-        --volume "$absolute_sandbox_path:/workspace:Z" \
-        "$DOCKER_IMAGE_NAME:latest" \
-        /bin/bash; then
-        log_success "Контейнер $SANDBOX_CONTAINER_NAME создан"
+    if docker run -d \
+        --name "$DOCKER_CONTAINER_NAME" \
+        --network bridge \
+        -v "$(pwd)/sandbox:/workspace/sandbox" \
+        "$DOCKER_IMAGE_NAME" \
+        tail -f /dev/null; then
+        log_success "Контейнер создан и запущен: $DOCKER_CONTAINER_NAME"
+        return 0
     else
         log_error "Ошибка создания контейнера"
-        exit 1
+        return 1
     fi
 }
 
-# Запуск контейнера
-start_container() {
-    log_step "Запуск контейнера..."
+# Создание директории sandbox
+create_sandbox_directory() {
+    log_step "Создание директории sandbox"
     
-    if check_container_running; then
-        log_info "Контейнер уже запущен"
-        return 0
+    if [ ! -d "sandbox" ]; then
+        mkdir -p sandbox
+        log_success "Директория sandbox создана"
+    else
+        log_success "Директория sandbox уже существует"
     fi
     
-    if docker start "$SANDBOX_CONTAINER_NAME"; then
-        log_success "Контейнер $SANDBOX_CONTAINER_NAME запущен"
-    else
-        log_error "Ошибка запуска контейнера"
-        exit 1
+    # Создаем тестовый файл
+    if [ ! -f "sandbox/README.md" ]; then
+        cat > "sandbox/README.md" << 'EOF'
+# ZetGui Sandbox
+
+Эта директория монтируется в Docker контейнер для безопасного выполнения кода.
+
+## Структура
+- `/workspace/sandbox/` - рабочая директория в контейнере
+- Все файлы здесь доступны из контейнера
+
+## Использование
+Весь код, который выполняется через AI, будет запускаться в изолированном контейнере.
+EOF
+        log_success "Файл README.md создан в sandbox/"
     fi
 }
 
 # Тестирование контейнера
 test_container() {
-    log_step "Тестирование контейнера..."
+    log_step "Тестирование контейнера"
     
-    # Тест 1: Проверка что контейнер запущен
-    if ! check_container_running; then
-        log_error "Контейнер не запущен"
+    show_loading "Проверка работы контейнера" 2
+    
+    # Тест 1: Основные команды
+    if docker exec "$DOCKER_CONTAINER_NAME" echo "Hello from container" >/dev/null 2>&1; then
+        log_success "Базовые команды работают"
+    else
+        log_error "Ошибка выполнения команд в контейнере"
         return 1
     fi
     
-    # Тест 2: Выполнение простой команды
-    log_info "Выполняю тестовую команду..."
-    if docker exec "$SANDBOX_CONTAINER_NAME" echo "Hello from ZetGui sandbox!" > /dev/null; then
-        log_success "Тестовая команда выполнена успешно"
+    # Тест 2: Python
+    if docker exec "$DOCKER_CONTAINER_NAME" python3 --version >/dev/null 2>&1; then
+        log_success "Python3 доступен"
     else
-        log_error "Ошибка выполнения команды в контейнере"
+        log_warning "Python3 недоступен"
+    fi
+    
+    # Тест 3: Node.js
+    if docker exec "$DOCKER_CONTAINER_NAME" node --version >/dev/null 2>&1; then
+        log_success "Node.js доступен"
+    else
+        log_warning "Node.js недоступен"
+    fi
+    
+    # Тест 4: Монтирование
+    local test_file="sandbox/docker_test_$(date +%s).txt"
+    echo "Test content" > "$test_file"
+    
+    if docker exec "$DOCKER_CONTAINER_NAME" cat "/workspace/$(basename "$test_file")" >/dev/null 2>&1; then
+        log_success "Монтирование работает"
+        rm -f "$test_file"
+    else
+        log_error "Ошибка монтирования директории"
+        rm -f "$test_file"
         return 1
     fi
     
-    # Тест 3: Проверка монтирования директории
-    log_info "Проверяю монтирование sandbox директории..."
-    if docker exec "$SANDBOX_CONTAINER_NAME" ls -la /workspace/README.md > /dev/null; then
-        log_success "Sandbox директория смонтирована корректно"
-    else
-        log_error "Проблема с монтированием sandbox директории"
-        return 1
-    fi
-    
-    # Тест 4: Проверка установленных пакетов
-    log_info "Проверяю установленные пакеты в контейнере..."
-    if docker exec "$SANDBOX_CONTAINER_NAME" which curl > /dev/null && \
-       docker exec "$SANDBOX_CONTAINER_NAME" which git > /dev/null && \
-       docker exec "$SANDBOX_CONTAINER_NAME" which nano > /dev/null; then
-        log_success "Все необходимые пакеты установлены"
-    else
-        log_warning "Некоторые пакеты могут отсутствовать в контейнере"
-    fi
-    
-    log_success "Все тесты пройдены успешно!"
     return 0
 }
 
 # Показать информацию о контейнере
 show_container_info() {
-    log_step "Информация о контейнере..."
+    log_step "Информация о контейнере"
+    echo
     
-    echo -e "${CYAN}📊 Статус Docker окружения:${NC}"
-    echo -e "${BLUE}  • Образ:     ${DOCKER_IMAGE_NAME}:latest${NC}"
-    echo -e "${BLUE}  • Контейнер: ${SANDBOX_CONTAINER_NAME}${NC}"
-    echo -e "${BLUE}  • Sandbox:   ${SANDBOX_DIR} → /workspace${NC}"
+    local image_size=$(docker images --format "table {{.Size}}" --filter "reference=$DOCKER_IMAGE_NAME" | tail -n 1)
+    log_info "Образ: $DOCKER_IMAGE_NAME ($image_size)"
     
-    if check_image_exists; then
-        echo -e "${GREEN}  ✅ Образ существует${NC}"
-    else
-        echo -e "${RED}  ❌ Образ не найден${NC}"
-    fi
+    local container_status=$(docker inspect -f '{{.State.Status}}' "$DOCKER_CONTAINER_NAME" 2>/dev/null)
+    log_info "Контейнер: $DOCKER_CONTAINER_NAME ($container_status)"
     
-    if check_container_exists; then
-        if check_container_running; then
-            echo -e "${GREEN}  ✅ Контейнер запущен${NC}"
-        else
-            echo -e "${YELLOW}  ⚠️  Контейнер остановлен${NC}"
-        fi
-    else
-        echo -e "${RED}  ❌ Контейнер не создан${NC}"
-    fi
+    local sandbox_path=$(realpath sandbox 2>/dev/null)
+    log_info "Sandbox: $sandbox_path"
+    
+    echo
+    log_info "Команды для работы:"
+    echo -e "  ${BLUE}Войти в контейнер:${NC} docker exec -it $DOCKER_CONTAINER_NAME bash"
+    echo -e "  ${BLUE}Остановить:${NC} docker stop $DOCKER_CONTAINER_NAME"
+    echo -e "  ${BLUE}Запустить:${NC} docker start $DOCKER_CONTAINER_NAME"
+    echo -e "  ${BLUE}Удалить:${NC} docker rm -f $DOCKER_CONTAINER_NAME"
 }
 
-# Очистка (удаление контейнера и образа)
-cleanup_docker() {
-    log_step "Очистка Docker ресурсов..."
+# Главная функция
+main() {
+    show_logo
     
-    # Останавливаем и удаляем контейнер
-    if check_container_exists; then
-        log_info "Удаляю контейнер $SANDBOX_CONTAINER_NAME..."
-        docker stop "$SANDBOX_CONTAINER_NAME" 2>/dev/null || true
-        docker rm "$SANDBOX_CONTAINER_NAME" 2>/dev/null || true
-        log_success "Контейнер удален"
+    log_info "Начинаю настройку Docker окружения"
+    echo
+    
+    # Проверки
+    if ! check_docker; then
+        exit 1
     fi
+    echo
     
-    # Удаляем образ
-    if check_image_exists; then
-        log_info "Удаляю образ $DOCKER_IMAGE_NAME:latest..."
-        docker rmi "$DOCKER_IMAGE_NAME:latest" 2>/dev/null || true
-        log_success "Образ удален"
+    check_dockerfile
+    echo
+    
+    # Сборка и создание
+    if ! build_image; then
+        exit 1
     fi
+    echo
     
-    log_success "Очистка завершена"
+    create_sandbox_directory
+    echo
+    
+    if ! create_container; then
+        exit 1
+    fi
+    echo
+    
+    # Тестирование
+    if ! test_container; then
+        log_warning "Некоторые тесты не прошли, но контейнер создан"
+    else
+        log_success "Все тесты пройдены успешно"
+    fi
+    echo
+    
+    show_container_info
+    echo
+    
+    log_success "Docker окружение готово к работе!"
 }
 
-# Полная настройка
-full_setup() {
-    log_step "🎯 Полная настройка Docker окружения"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    
-    check_docker
-    create_sandbox_dir
-    
-    # Сборка образа (если не существует или forced rebuild)
-    if ! check_image_exists || [ "$1" = "--rebuild" ]; then
-        build_docker_image
-    else
-        log_info "Образ $DOCKER_IMAGE_NAME:latest уже существует"
-    fi
-    
-    # Создание контейнера (если не существует)
-    if ! check_container_exists; then
-        create_container
-    else
-        log_info "Контейнер $SANDBOX_CONTAINER_NAME уже существует"
-    fi
-    
-    start_container
-    
-    if test_container; then
-        echo
-        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        log_success "🎉 Docker окружение готово к работе!"
-        show_container_info
-        echo
-        log_info "📋 Команды для управления:"
-        log_info "   Проверка статуса: ./script/setup-docker.sh --status"
-        log_info "   Перезапуск:       ./script/setup-docker.sh --restart"
-        log_info "   Очистка:          ./script/setup-docker.sh --cleanup"
-        echo
-    else
-        log_error "❌ Настройка завершилась с ошибками"
+# Проверка директории
+check_directory() {
+    if [ ! -f "package.json" ]; then
+        log_error "Скрипт должен запускаться из корневой директории проекта"
+        log_info "Перейдите в директорию с package.json"
         exit 1
     fi
 }
 
-# Основная функция с параметрами
-main() {
-    case "${1:-setup}" in
-        "setup"|"--setup")
-            full_setup "$2"
-            ;;
-        "--rebuild")
-            full_setup "--rebuild"
-            ;;
-        "--status")
-            show_container_info
-            ;;
-        "--start")
-            check_docker
-            start_container
-            ;;
-        "--restart")
-            check_docker
-            if check_container_exists; then
-                docker restart "$SANDBOX_CONTAINER_NAME"
-                log_success "Контейнер перезапущен"
-            else
-                log_error "Контейнер не существует"
-                exit 1
-            fi
-            ;;
-        "--test")
-            check_docker
-            test_container
-            ;;
-        "--cleanup")
-            cleanup_docker
-            ;;
-        "--help"|"-h")
-            echo "🐳 ZeroEnhanced Docker Setup"
-            echo "Использование: $0 [команда]"
-            echo ""
-            echo "Команды:"
-            echo "  setup     - Полная настройка (по умолчанию)"
-            echo "  --rebuild - Пересборка образа и контейнера"
-            echo "  --status  - Показать статус"
-            echo "  --start   - Запустить контейнер"
-            echo "  --restart - Перезапустить контейнер"
-            echo "  --test    - Протестировать контейнер"
-            echo "  --cleanup - Удалить контейнер и образ"
-            echo "  --help    - Показать эту справку"
-            ;;
-        *)
-            log_error "Неизвестная команда: $1"
-            echo "Используйте --help для справки"
-            exit 1
-            ;;
-    esac
-}
+# Обработка аргументов
+case "${1:-}" in
+    --rebuild|-r)
+        log_info "Режим пересборки образа"
+        docker rmi -f "$DOCKER_IMAGE_NAME" 2>/dev/null || true
+        ;;
+    --clean|-c)
+        log_info "Очистка Docker ресурсов"
+        docker rm -f "$DOCKER_CONTAINER_NAME" 2>/dev/null || true
+        docker rmi -f "$DOCKER_IMAGE_NAME" 2>/dev/null || true
+        log_success "Очистка завершена"
+        exit 0
+        ;;
+    --help|-h)
+        echo "Использование: $0 [опции]"
+        echo "Опции:"
+        echo "  --rebuild, -r    Пересобрать Docker образ"
+        echo "  --clean, -c      Удалить контейнер и образ"
+        echo "  --help, -h       Показать эту справку"
+        exit 0
+        ;;
+esac
+
+# Обработка Ctrl+C
+trap 'echo; log_info "Прерывание настройки"; exit 0' INT
 
 # Запуск
+check_directory
 main "$@" 

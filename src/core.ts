@@ -10,7 +10,6 @@ const loadConfig = (): { prod: boolean; domain?: string } => {
         const configData = fs.readFileSync(configPath, 'utf-8');
         return JSON.parse(configData);
     } catch (error) {
-        console.warn('Failed to load Prod.json, defaulting to development mode:', error);
         return { prod: false };
     }
 };
@@ -19,7 +18,8 @@ const config = loadConfig();
 const USE_REMOTE = config.prod;
 
 const API_HOST = USE_REMOTE ? (config.domain || 'https://zetapi.loophole.site/') : 'http://localhost:4000';
-const API_BASE_URL = `${API_HOST}/api/proxy`;
+const API_STREAM_URL = `${API_HOST}/api/stream`;
+const API_PROXY_URL = `${API_HOST}/api/proxy`;
 
 const DOCKER_IMAGE_NAME = 'zet-sandbox-image';
 const SANDBOX_CONTAINER_NAME = 'zet-sandbox';
@@ -55,6 +55,22 @@ export interface AIResponse {
     thought: string;
     displayText?: string;
     action: AIAction;
+}
+
+interface QwenStreamEvent {
+    'response.created'?: {
+        chat_id: string;
+        parent_id: string;
+        response_id: string;
+    };
+    choices?: Array<{
+        delta: {
+            role: string;
+            content: string;
+            phase: string;
+            status: string;
+        };
+    }>;
 }
 
 const systemPrompt = `
@@ -166,6 +182,10 @@ Your JSON response:
 }
 `;
 
+const generateChatId = (): string => {
+    return 'chat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+};
+
 export class AIService {
     private isInitialized = false;
 
@@ -174,7 +194,6 @@ export class AIService {
             throw new Error('Authentication token is required for initialization.');
         }
         try {
-            // ответ: { email: string, request_count: number }
             await axios.get(`${API_HOST}/api/user/me`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -193,47 +212,122 @@ export class AIService {
         }
     }
 
-    async getCommand(userInput: string, observation: string = "", token: string, pageId?: number): Promise<{ ai: AIResponse; pageId?: number }> {
+    async getCommand(
+        userInput: string,
+        observation: string = "",
+        token: string,
+        pageId?: number,
+        onStreamUpdate?: (text: string) => void
+    ): Promise<{ ai: AIResponse; pageId?: number }> {
         if (!this.isInitialized) {
             throw new Error("AI Service is not initialized. Call init() first.");
         }
 
         const fullPrompt = `${systemPrompt}\n[OBSERVATION]\n${observation || "You are at the beginning of the session."}\n[USER_REQUEST]\n${userInput}`;
 
-        const body: any = { message: fullPrompt };
-        if (typeof pageId === 'number') body.pageId = pageId;
+        const chatId = generateChatId();
 
         const maxRetries = 3;
         const baseDelayMs = 2_000;
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
-                // ответ: { response: string, pageId?: number }
-                const response = await axios.post(`${API_BASE_URL}/send`, body, {
-                    headers: { Authorization: `Bearer ${token}` },
-                    timeout: 60_000
+                const requestBody = {
+                    model: 'qwen2.5-coder-32b-instruct',
+                    messages: [
+                        {
+                            role: 'user',
+                            content: fullPrompt
+                        }
+                    ],
+                    stream: true
+                };
+
+                const response = await fetch(`${API_STREAM_URL}/chat/completions?chat_id=${chatId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'text/event-stream'
+                    },
+                    body: JSON.stringify(requestBody)
                 });
 
-                const aiRawResponse = response.data.response;
-                const newPageId = response.data.pageId as number | undefined;
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const reader = response.body?.getReader();
+                if (!reader) {
+                    throw new Error('No readable stream available');
+                }
+
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let fullResponse = '';
+                let streamedPageId: number | undefined;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+
+                    for (const line of lines) {
+                        if (line.trim() === '') continue;
+
+                        if (line.startsWith('data: ')) {
+                            const dataStr = line.substring(6);
+
+                            if (dataStr.trim() === '[DONE]') {
+                                break;
+                            }
+
+                            try {
+                                const data: QwenStreamEvent = JSON.parse(dataStr);
+
+                                if (data['response.created']) {
+                                    if (data['response.created'].parent_id) {
+                                        const pageIdMatch = data['response.created'].parent_id.match(/\d+/);
+                                        if (pageIdMatch) {
+                                            streamedPageId = parseInt(pageIdMatch[0]);
+                                        }
+                                    }
+                                }
+
+                                if (data.choices && data.choices[0]?.delta) {
+                                    const delta = data.choices[0].delta;
+
+                                    if (delta.content) {
+                                        fullResponse += delta.content;
+                                        if (onStreamUpdate) {
+                                            onStreamUpdate(delta.content);
+                                        }
+                                    }
+
+                                    if (delta.status === 'finished') {
+                                        break;
+                                    }
+                                }
+                            } catch (parseError) {
+                                // Игнорируем ошибки парсинга отдельных chunks
+                            }
+                        }
+                    }
+                }
 
                 try {
-                    const parsedResponse = JSON.parse(aiRawResponse);
-                    return { ai: parsedResponse, pageId: newPageId };
+                    const parsedResponse: AIResponse = JSON.parse(fullResponse);
+                    return { ai: parsedResponse, pageId: streamedPageId || pageId };
                 } catch (jsonError) {
-                    console.error('JSON parse error details:');
-                    console.error('Raw response:', aiRawResponse);
-                    console.error('Response length:', aiRawResponse?.length || 'undefined');
-                    console.error('JSON error:', jsonError instanceof Error ? jsonError.message : jsonError);
-
-                    const cleanedResponse = aiRawResponse?.replace(/[\u0000-\u001F\u007F-\u009F]/g, '') || '';
+                    const cleanedResponse = fullResponse?.replace(/[\u0000-\u001F\u007F-\u009F]/g, '') || '';
 
                     try {
-                        const parsedResponse = JSON.parse(cleanedResponse);
-                        console.log('Successfully parsed cleaned JSON');
-                        return { ai: parsedResponse, pageId: newPageId };
+                        const parsedResponse: AIResponse = JSON.parse(cleanedResponse);
+                        return { ai: parsedResponse, pageId: streamedPageId || pageId };
                     } catch (secondJsonError) {
-                        console.error('Failed to parse even cleaned JSON:', secondJsonError);
                         const fallbackResponse: AIResponse = {
                             thought: "Произошла ошибка при обработке ответа от ИИ. Возможно, сервер вернул некорректный JSON.",
                             displayText: "Ошибка парсинга ответа ИИ",
@@ -242,33 +336,83 @@ export class AIService {
                                 parameters: null
                             }
                         };
-                        return { ai: fallbackResponse, pageId: newPageId };
+                        return { ai: fallbackResponse, pageId: streamedPageId || pageId };
                     }
                 }
             } catch (error) {
-                if (axios.isAxiosError(error) && error.response?.status === 503) {
-                    if (attempt < maxRetries) {
-                        const delay = baseDelayMs * (attempt + 1);
-                        await new Promise(res => setTimeout(res, delay));
-                        continue;
-                    }
+                if (attempt < maxRetries) {
+                    const delay = baseDelayMs * (attempt + 1);
+                    await new Promise(res => setTimeout(res, delay));
+                    continue;
                 }
 
-                if (axios.isAxiosError(error) && error.response) {
+                if (error instanceof Error && error.message.includes('503')) {
                     throw {
-                        status: error.response.status,
-                        data: error.response.data,
+                        status: 503,
+                        data: { error: 'Service temporarily unavailable' },
                         message: `Failed to get command from AI: ${error.message}`
                     };
                 }
-                if (error instanceof Error) {
-                    throw new Error(`Failed to get command from AI: ${error.message}`);
-                }
-                throw new Error(`An unknown error occurred while getting command from AI.`);
+
+                throw {
+                    status: 500,
+                    data: { error: 'Internal server error' },
+                    message: `Failed to get command from AI: ${error instanceof Error ? error.message : 'Unknown error'}`
+                };
             }
         }
 
         throw new Error('Exhausted all retries but failed to get a response from AI.');
+    }
+
+    async getCommandNonStreaming(userInput: string, observation: string = "", token: string, pageId?: number): Promise<{ ai: AIResponse; pageId?: number }> {
+        if (!this.isInitialized) {
+            throw new Error("AI Service is not initialized. Call init() first.");
+        }
+
+        const fullPrompt = `${systemPrompt}\n[OBSERVATION]\n${observation || "You are at the beginning of the session."}\n[USER_REQUEST]\n${userInput}`;
+
+        const chatId = generateChatId();
+
+        try {
+            const requestBody = {
+                model: 'qwen2.5-coder-32b-instruct',
+                messages: [
+                    {
+                        role: 'user',
+                        content: fullPrompt
+                    }
+                ],
+                stream: false
+            };
+
+            const response = await axios.post(`${API_PROXY_URL}/chat/completions?chat_id=${chatId}`, requestBody, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 60_000
+            });
+
+            const aiRawResponse = response.data.choices?.[0]?.message?.content || response.data.response || JSON.stringify(response.data);
+
+            try {
+                const parsedResponse = JSON.parse(aiRawResponse);
+                return { ai: parsedResponse, pageId };
+            } catch (jsonError) {
+                const fallbackResponse: AIResponse = {
+                    thought: "Произошла ошибка при обработке ответа от ИИ в режиме без стриминга.",
+                    displayText: "Ошибка парсинга ответа ИИ",
+                    action: {
+                        tool: "protocol_complete",
+                        parameters: null
+                    }
+                };
+                return { ai: fallbackResponse, pageId };
+            }
+        } catch (error) {
+            throw error;
+        }
     }
 }
 
@@ -316,7 +460,6 @@ export class DockerService {
             return;
         }
 
-        console.log(`Creating new sandbox container '${SANDBOX_CONTAINER_NAME}'...`);
         container = await this.docker.createContainer({
             Image: imageNameWithTag,
             name: SANDBOX_CONTAINER_NAME,
@@ -326,7 +469,6 @@ export class DockerService {
             HostConfig: { Binds: [`${process.cwd()}/sandbox:/workspace:z`] }
         });
         await container.start();
-        console.log('Sandbox container created and started.');
     }
 
     async executeCommand(command: string): Promise<{ stdout: string; stderr: string }> {

@@ -1,5 +1,3 @@
-import axios from 'axios';
-
 const loadConfig = async (): Promise<{ prod: boolean; domain?: string }> => {
   if (isNeutralinoEnvironment()) {
     try {
@@ -149,35 +147,30 @@ const universalStorage = {
 
 export interface AIAction {
   tool: 'execute_command' | 'protocol_complete' | 'update_file';
-  parameters: (
-    | {
-      command: string;
-      confirm: boolean;
-      prompt?: string;
-    }
-    | {
-      file: string;
-      code?: string;
-      code_lines?: string[];
-      line_operations?: {
-        [lineNumber: string]: {
-          action: 'insert' | 'replace' | 'delete';
-          content?: string;
-        };
-      };
-      edit: boolean;
-      startLine?: number;
-      endLine?: number;
-      confirm: boolean;
-      prompt?: string;
-    }
-  ) | null;
+  parameters: any;
 }
 
 export interface AIResponse {
   thought: string;
   displayText?: string;
   action: AIAction;
+  executionResult?: any;
+}
+
+interface StreamEvent {
+  'response.created'?: {
+    chat_id: string;
+    parent_id: string;
+    response_id: string;
+  };
+  choices?: Array<{
+    delta: {
+      role: string;
+      content: string;
+      phase: string;
+      status: string;
+    };
+  }>;
 }
 
 const systemPrompt = `
@@ -290,217 +283,410 @@ Your JSON response:
 `;
 
 export class AIService {
+  private baseUrl: string;
   private isInitialized = false;
-  private token: string | null = null;
+  private authToken: string | null = null;
 
-  async init(): Promise<void> {
+  constructor() {
+    this.baseUrl = 'http://localhost:4000';
+  }
+
+  async init(token?: string): Promise<void> {
     try {
-      this.token = await universalStorage.getData('auth_token');
-
-      if (!this.token) {
-        throw new Error('Authentication token not found.');
+      if (token) {
+        this.authToken = token;
       }
 
-      const userUrl = await getUserUrl();
-      const response = await axios.get(userUrl, {
-        headers: { Authorization: `Bearer ${this.token}` }
+      if (!this.authToken) {
+        throw new Error('Authentication token is required');
+      }
+
+      const response = await fetch(`${this.baseUrl}/api/user/me`, {
+        headers: {
+          'Authorization': `Bearer ${this.authToken}`,
+          'Content-Type': 'application/json'
+        }
       });
 
-      if (response.status === 200) {
-        this.isInitialized = true;
-      } else {
-        throw new Error('Token validation failed');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || `HTTP ${response.status}`);
       }
+
+      this.isInitialized = true;
+      console.log('[AI SERVICE] Initialized successfully');
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response) {
-        const status = error.response.status;
-        const errorData = error.response.data;
-
-        if (status === 401 || status === 403) {
-          throw new Error('Токен недействителен. Необходимо войти заново.');
-        } else if (status === 404) {
-          throw new Error('Пользователь не найден. Необходимо войти заново.');
-        } else if (status >= 500) {
-          throw new Error('Ошибка сервера. Попробуйте позже.');
-        } else {
-          throw new Error(errorData?.error || `Ошибка инициализации (${status})`);
-        }
-      } else if (error instanceof Error) {
-        if (error.message.includes('ECONNREFUSED') || error.message.includes('Network Error')) {
-          throw new Error('Не удается подключиться к серверу. Проверьте что сервер запущен на localhost:4000');
-        }
-        throw new Error(`Ошибка инициализации: ${error.message}`);
-      }
-      throw new Error('Неизвестная ошибка инициализации');
+      console.error('[AI SERVICE] Initialization failed:', error);
+      throw error;
     }
   }
 
-  async getCommand(userInput: string, observation: string = "", pageId?: number): Promise<{ ai: AIResponse; pageId?: number }> {
-    if (!this.isInitialized || !this.token) {
-      throw new Error("AI Service is not initialized. Call init() first.");
-    }
-
-    const fullPrompt = `${systemPrompt}\n[OBSERVATION]\n${observation || "You are at the beginning of the session."}\n[USER_REQUEST]\n${userInput}`;
-
-    const body: any = { message: fullPrompt };
-    if (typeof pageId === 'number') body.pageId = pageId;
-
-    const maxRetries = 3;
-    const baseDelayMs = 2_000;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const apiUrl = await getApiUrl();
-        const response = await axios.post(`${apiUrl}/send`, body, {
-          headers: { Authorization: `Bearer ${this.token}` },
-          timeout: 60_000
-        });
-
-        const aiRawResponse = response.data.response;
-        const newPageId = response.data.pageId as number | undefined;
-
-        try {
-          const parsedResponse = JSON.parse(aiRawResponse);
-          return { ai: parsedResponse, pageId: newPageId };
-        } catch (jsonError) {
-          console.error('JSON parse error details:');
-          console.error('Raw response:', aiRawResponse);
-          console.error('Response length:', aiRawResponse?.length || 'undefined');
-          console.error('JSON error:', jsonError instanceof Error ? jsonError.message : jsonError);
-
-          const cleanedResponse = aiRawResponse?.replace(/[\u0000-\u001F\u007F-\u009F]/g, '') || '';
-
-          try {
-            const parsedResponse = JSON.parse(cleanedResponse);
-            console.log('Successfully parsed cleaned JSON');
-            return { ai: parsedResponse, pageId: newPageId };
-          } catch (secondJsonError) {
-            console.error('Failed to parse even cleaned JSON:', secondJsonError);
-            const fallbackResponse: AIResponse = {
-              thought: "Произошла ошибка при обработке ответа от ИИ. Возможно, сервер вернул некорректный JSON.",
-              displayText: "Ошибка парсинга ответа ИИ",
-              action: {
-                tool: "protocol_complete",
-                parameters: null
-              }
-            };
-            return { ai: fallbackResponse, pageId: newPageId };
-          }
-        }
-      } catch (error) {
-        if (axios.isAxiosError(error) && error.response?.status === 503) {
-          if (attempt < maxRetries) {
-            const delay = baseDelayMs * (attempt + 1);
-            await new Promise(res => setTimeout(res, delay));
-            continue;
-          }
-        }
-
-        if (attempt === maxRetries) {
-          if (axios.isAxiosError(error) && error.response) {
-            throw {
-              status: error.response.status,
-              data: error.response.data,
-              message: `Failed to get command from AI: ${error.message}`
-            };
-          }
-          if (error instanceof Error) {
-            throw new Error(`Failed to get command from AI: ${error.message}`);
-          }
-          throw new Error(`An unknown error occurred while getting command from AI.`);
-        }
-
-        const delay = baseDelayMs * (attempt + 1);
-        await new Promise(res => setTimeout(res, delay));
-      }
-    }
-
-    throw new Error('Exhausted all retries but failed to get a response from AI.');
-  }
-
-  async login(email: string, password: string): Promise<void> {
+  async login(email: string, password: string): Promise<string> {
     try {
-      const authUrl = await getAuthUrl();
-      const loginResp = await axios.post(`${authUrl}/login`, { email, password });
-      const token: string = loginResp.data.token;
+      const response = await fetch(`${this.baseUrl}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password })
+      });
 
-      await universalStorage.setData('auth_token', token);
-      this.token = token;
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      this.authToken = data.token;
       this.isInitialized = true;
 
-      console.log('✅ Login successful and token synchronized across all applications');
+      console.log('[AI SERVICE] Login successful');
+      return data.token;
     } catch (error) {
-      if (axios.isAxiosError(error) && error.response) {
-        const status = error.response.status;
-        const errorData = error.response.data;
-
-        if (status === 404) {
-          throw new Error('Пользователь не найден. Проверьте email или зарегистрируйтесь.');
-        } else if (status === 401) {
-          const errorMsg = errorData?.error || 'Неверный пароль';
-          throw new Error(errorMsg);
-        } else if (status === 429) {
-          throw new Error('Слишком много попыток входа. Попробуйте позже.');
-        } else if (status >= 500) {
-          throw new Error('Ошибка сервера. Попробуйте позже.');
-        } else {
-          throw new Error(errorData?.error || `Ошибка входа (${status})`);
-        }
-      } else if (error instanceof Error) {
-        if (error.message.includes('ECONNREFUSED') || error.message.includes('Network Error')) {
-          throw new Error('Не удается подключиться к серверу. Проверьте что сервер запущен на localhost:4000');
-        }
-        throw new Error(`Ошибка сети: ${error.message}`);
-      }
-      throw new Error('Неизвестная ошибка при входе');
+      console.error('[AI SERVICE] Login failed:', error);
+      throw error;
     }
   }
 
-  async register(email: string, password: string): Promise<void> {
+  async register(email: string, password: string): Promise<string> {
     try {
-      const authUrl = await getAuthUrl();
-      const regResp = await axios.post(`${authUrl}/register`, { email, password });
-      const token: string = regResp.data.token;
-      await universalStorage.setData('auth_token', token);
-      this.token = token;
-      this.isInitialized = true;
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response) {
-        const status = error.response.status;
-        const errorData = error.response.data;
+      const response = await fetch(`${this.baseUrl}/api/auth/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ email, password })
+      });
 
-        if (status === 400) {
-          throw new Error(errorData?.error || 'Некорректные данные для регистрации');
-        } else if (status === 409) {
-          throw new Error('Пользователь с таким email уже существует');
-        } else if (status >= 500) {
-          throw new Error('Ошибка сервера при регистрации. Попробуйте позже.');
-        } else {
-          throw new Error(errorData?.error || `Ошибка регистрации (${status})`);
-        }
-      } else if (error instanceof Error) {
-        if (error.message.includes('ECONNREFUSED') || error.message.includes('Network Error')) {
-          throw new Error('Не удается подключиться к серверу. Проверьте что сервер запущен на localhost:4000');
-        }
-        throw new Error(`Ошибка сети: ${error.message}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `HTTP ${response.status}`);
       }
-      throw new Error('Неизвестная ошибка при регистрации');
+
+      const data = await response.json();
+      this.authToken = data.token;
+      this.isInitialized = true;
+
+      console.log('[AI SERVICE] Registration successful');
+      return data.token;
+    } catch (error) {
+      console.error('[AI SERVICE] Registration failed:', error);
+      throw error;
     }
   }
 
   async logout(): Promise<void> {
     try {
-      if (!isNeutralinoEnvironment()) {
-        await fetch('/api/auth/token', { method: 'DELETE' });
+      if (this.authToken) {
+        await fetch(`${this.baseUrl}/api/auth/token`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${this.authToken}`
+          }
+        });
       }
+
+      this.authToken = null;
+      this.isInitialized = false;
+      console.log('[AI SERVICE] Logout successful');
     } catch (error) {
-      console.warn('Failed to delete token via backend:', error);
+      console.error('[AI SERVICE] Logout error:', error);
+      this.authToken = null;
+      this.isInitialized = false;
+    }
+  }
+
+  async sendMessage(message: string, onChunk?: (chunk: string) => void): Promise<AIResponse> {
+    if (!this.isInitialized || !this.authToken) {
+      throw new Error('AI Service not initialized. Call init() first.');
     }
 
-    await universalStorage.setData('auth_token', '');
-    this.token = null;
-    this.isInitialized = false;
+    try {
+      console.log('[AI SERVICE] Sending streaming message:', message);
 
-    console.log('✅ Logout successful and token removed from all applications');
+      const response = await fetch(`${this.baseUrl}/api/stream/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.authToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream'
+        },
+        body: JSON.stringify({
+          message,
+          model: 'qwen2.5-coder-32b-instruct',
+          stream: true
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No readable stream available');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullResponse = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+
+          if (line.startsWith('data: ')) {
+            const dataStr = line.substring(6);
+
+            if (dataStr.trim() === '[DONE]') {
+              console.log('[AI SERVICE] Stream completed');
+              break;
+            }
+
+            try {
+              const event: StreamEvent = JSON.parse(dataStr);
+
+              if (event['response.created']) {
+                console.log(`[AI SERVICE] Chat created: ${event['response.created'].chat_id}`);
+              }
+
+              if (event.choices && event.choices[0]?.delta) {
+                const delta = event.choices[0].delta;
+
+                if (delta.content) {
+                  fullResponse += delta.content;
+                  if (onChunk) {
+                    onChunk(delta.content);
+                  }
+                }
+
+                if (delta.status === 'finished') {
+                  console.log('[AI SERVICE] Stream finished');
+                  break;
+                }
+              }
+            } catch (parseError) {
+              console.warn('[AI SERVICE] Parse error:', parseError);
+            }
+          }
+        }
+      }
+
+      try {
+        const parsedResponse: AIResponse = JSON.parse(fullResponse);
+        console.log('[AI SERVICE] Successfully parsed response');
+        return parsedResponse;
+      } catch (jsonError) {
+        console.error('[AI SERVICE] Failed to parse final response:', jsonError);
+        throw new Error('Failed to parse AI response');
+      }
+    } catch (error) {
+      console.error('[AI SERVICE] Send message error:', error);
+      throw error;
+    }
   }
-} 
+
+  async getCommand(userInput: string, observation: string = "", pageId?: number): Promise<{ ai: AIResponse; pageId?: number }> {
+    const response = await this.sendMessage(`[OBSERVATION]\n${observation || "You are at the beginning of the session."}\n[USER_REQUEST]\n${userInput}`);
+    return { ai: response, pageId };
+  }
+
+  async sendMessageNonStreaming(message: string): Promise<AIResponse> {
+    if (!this.isInitialized || !this.authToken) {
+      throw new Error('AI Service not initialized. Call init() first.');
+    }
+
+    try {
+      console.log('[AI SERVICE] Sending non-streaming message:', message);
+
+      const response = await fetch(`${this.baseUrl}/api/proxy/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.authToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message,
+          model: 'qwen2.5-coder-32b-instruct',
+          stream: false
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data.processedResponse) {
+        return data.processedResponse;
+      } else if (data.response) {
+        try {
+          return JSON.parse(data.response);
+        } catch (jsonError) {
+          throw new Error('Failed to parse AI response');
+        }
+      } else {
+        throw new Error('No valid response received');
+      }
+    } catch (error) {
+      console.error('[AI SERVICE] Non-streaming error:', error);
+      throw error;
+    }
+  }
+
+  async executeCommand(command: string): Promise<{ stdout: string; stderr: string }> {
+    if (!this.authToken) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/api/docker/execute`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.authToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ command })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('[AI SERVICE] Execute command error:', error);
+      throw error;
+    }
+  }
+
+  async updateFile(fileParams: {
+    file: string;
+    code?: string;
+    code_lines?: string[];
+    line_operations?: any;
+    edit?: boolean;
+    startLine?: number;
+    endLine?: number;
+  }): Promise<{ success: boolean; message?: string; error?: string }> {
+    if (!this.authToken) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/api/files/update`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.authToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(fileParams)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('[AI SERVICE] Update file error:', error);
+      throw error;
+    }
+  }
+
+  async readFile(filePath: string): Promise<{ content: string; path: string }> {
+    if (!this.authToken) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/api/files/read?path=${encodeURIComponent(filePath)}`, {
+        headers: {
+          'Authorization': `Bearer ${this.authToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('[AI SERVICE] Read file error:', error);
+      throw error;
+    }
+  }
+
+  async listFiles(dirPath: string = ''): Promise<{ files: string[]; directories: string[] }> {
+    if (!this.authToken) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/api/files/list?path=${encodeURIComponent(dirPath)}`, {
+        headers: {
+          'Authorization': `Bearer ${this.authToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('[AI SERVICE] List files error:', error);
+      throw error;
+    }
+  }
+
+  async ensureSandbox(): Promise<void> {
+    if (!this.authToken) {
+      throw new Error('Not authenticated');
+    }
+
+    try {
+      const response = await fetch(`${this.baseUrl}/api/docker/ensure-sandbox`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.authToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || `HTTP ${response.status}`);
+      }
+
+      console.log('[AI SERVICE] Sandbox ensured');
+    } catch (error) {
+      console.error('[AI SERVICE] Ensure sandbox error:', error);
+      throw error;
+    }
+  }
+
+  isReady(): boolean {
+    return this.isInitialized && this.authToken !== null;
+  }
+
+  getAuthToken(): string | null {
+    return this.authToken;
+  }
+}
+
+export default AIService; 

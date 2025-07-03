@@ -1,174 +1,109 @@
-import Editor from '@monaco-editor/react';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
+import { useApp } from '../../context/AppContext';
 
-interface CodeEditorProps {
-  filePath?: string;
-  onSave?: (content: string) => void;
-}
-
-//* редактор кода с monaco
-export const CodeEditor: React.FC<CodeEditorProps> = ({ filePath, onSave }) => {
-  const [content, setContent] = useState<string>('');
-  const [language, setLanguage] = useState<string>('typescript');
+export const CodeEditor: React.FC = () => {
+  const { aiService } = useApp();
+  const [content, setContent] = useState('');
+  const [filePath, setFilePath] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-
-  useEffect(() => {
-    if (filePath) {
-      loadFile(filePath);
-    }
-  }, [filePath]);
+  const [isSaving, setIsSaving] = useState(false);
 
   const loadFile = async (path: string) => {
+    if (!aiService.isReady() || !path) return;
+
     setIsLoading(true);
     try {
-      const ext = path.split('.').pop()?.toLowerCase();
-      const langMap: { [key: string]: string } = {
-        'ts': 'typescript',
-        'tsx': 'typescript',
-        'js': 'javascript',
-        'jsx': 'javascript',
-        'json': 'json',
-        'md': 'markdown',
-        'html': 'html',
-        'css': 'css'
-      };
-      setLanguage(langMap[ext || ''] || 'plaintext');
-
-      try {
-        const result = await (window as any).Neutralino.filesystem.readFile(path);
-        setContent(result);
-      } catch (error) {
-        console.warn('Could not load file:', error);
-        setContent(getExampleContent(path));
-      }
+      const result = await aiService.readFile(path);
+      setContent(result.content);
+      setFilePath(result.path);
     } catch (error) {
-      console.error('Error loading file:', error);
-      setContent(`// Error loading file: ${path}\n// ${error}`);
+      console.error('Failed to load file:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const getExampleContent = (path: string): string => {
-    if (path.includes('App.tsx')) {
-      return `import React from 'react';
+  const saveFile = async () => {
+    if (!aiService.isReady() || !filePath) return;
 
-const App: React.FC = () => {
-  return (
-    <div className="app">
-      <h1>Hello ZetGui!</h1>
-    </div>
-  );
-};
-
-export default App;`;
+    setIsSaving(true);
+    try {
+      await aiService.updateFile({
+        file: filePath,
+        code: content
+      });
+      console.log('File saved successfully');
+    } catch (error) {
+      console.error('Failed to save file:', error);
+    } finally {
+      setIsSaving(false);
     }
-
-    if (path.includes('.ts') || path.includes('.tsx')) {
-      return `// TypeScript file: ${path}
-export interface Example {
-  id: number;
-  name: string;
-}
-
-export const exampleFunction = (): Example => {
-  return {
-    id: 1,
-    name: 'Example'
-  };
-};`;
-    }
-
-    if (path.includes('.json')) {
-      return `{
-  "name": "example",
-  "version": "1.0.0",
-  "description": "Example JSON file"
-}`;
-    }
-
-    return `// File: ${path}
-// This is an example file content
-// Select a file from the file explorer to edit it`;
   };
 
-  const handleEditorChange = (value: string | undefined) => {
-    setContent(value || '');
-  };
-
-  const handleSave = () => {
-    if (onSave) {
-      onSave(content);
-    }
-    console.log('Saving file:', filePath, content);
-  };
-
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.ctrlKey && e.key === 's') {
       e.preventDefault();
-      handleSave();
+      saveFile();
     }
   };
 
-  useEffect(() => {
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [content, filePath]);
-
   return (
-    <div className="flex flex-col h-full bg-dark-900">
-      <div className="bg-dark-800 border-b border-dark-500 px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center space-x-2">
-          <span className="text-sm text-dark-200">
-            {filePath ? `📝 ${filePath}` : '📝 No file selected'}
-          </span>
+    <div className="h-full bg-white flex flex-col">
+      <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <h3 className="font-semibold text-gray-800">💻 Code Editor</h3>
           {filePath && (
-            <span className="text-xs text-dark-400 bg-dark-700 px-2 py-1 rounded">
-              {language}
-            </span>
+            <span className="text-sm text-gray-600">{filePath}</span>
           )}
         </div>
 
-        {filePath && (
-          <button
-            onClick={handleSave}
-            className="text-xs bg-accent hover:bg-accent-dark text-dark-900 px-3 py-1 rounded transition-colors"
-          >
-            💾 Save (Ctrl+S)
-          </button>
-        )}
-      </div>
-
-      <div className="flex-1">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-dark-400">Loading...</div>
-          </div>
-        ) : (
-          <Editor
-            height="100%"
-            language={language}
-            value={content}
-            onChange={handleEditorChange}
-            theme="vs-dark"
-            options={{
-              fontSize: 14,
-              fontFamily: 'JetBrains Mono, Consolas, Monaco, monospace',
-              minimap: { enabled: false },
-              scrollBeyondLastLine: false,
-              wordWrap: 'on',
-              automaticLayout: true,
-              tabSize: 2,
-              insertSpaces: true,
-              renderWhitespace: 'selection',
-              bracketPairColorization: { enabled: true },
-              guides: {
-                indentation: true,
-                bracketPairs: true
+        <div className="flex items-center space-x-2">
+          <input
+            type="text"
+            placeholder="Enter file path..."
+            className="px-3 py-1 border border-gray-300 rounded-md text-sm"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                loadFile((e.target as HTMLInputElement).value);
               }
             }}
           />
+          <button
+            onClick={saveFile}
+            disabled={!filePath || isSaving}
+            className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isSaving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 relative">
+        {isLoading ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="animate-spin w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full"></div>
+          </div>
+        ) : (
+          <textarea
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="w-full h-full p-4 font-mono text-sm border-none outline-none resize-none"
+            placeholder={filePath ? 'File content will appear here...' : 'Enter a file path to load content...'}
+            spellCheck={false}
+          />
         )}
+      </div>
+
+      <div className="bg-gray-50 px-4 py-2 border-t border-gray-200 text-sm text-gray-600">
+        <div className="flex items-center justify-between">
+          <span>
+            {content.split('\n').length} lines • {content.length} characters
+          </span>
+          <span>
+            Ctrl+S to save
+          </span>
+        </div>
       </div>
     </div>
   );

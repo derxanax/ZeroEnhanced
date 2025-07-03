@@ -39,7 +39,8 @@ const WS_PORT = 8080;
 
 const USE_REMOTE = IS_PRODUCTION;
 const API_HOST = USE_REMOTE ? (FRONTEND_DOMAIN || 'https://zetapi.loophole.site/') : 'http://localhost:4000';
-const API_BASE_URL = `${API_HOST}/api/proxy`;
+const API_STREAM_URL = `${API_HOST}/api/stream`;
+const API_PROXY_URL = `${API_HOST}/api/proxy`;
 
 const DOCKER_IMAGE_NAME = 'zet-sandbox-image';
 const SANDBOX_CONTAINER_NAME = 'zet-sandbox';
@@ -267,61 +268,189 @@ app.post('/api/exit', async (req: Request, res: Response) => {
   }
 });
 
-// Enhanced AI proxy endpoint with action processing
-app.post('/api/proxy/send', async (req, res) => {
+// NEW: Enhanced AI proxy endpoint for new Qwen API
+app.post('/api/proxy/chat/completions', async (req: Request, res: Response) => {
   try {
-    // ответ от внешнего api: { response: string, pageId?: number }
-    const response = await axios.post(`${API_BASE_URL}/send`, req.body, {
-      headers: { 'Authorization': req.headers.authorization }
+    const { message, model = 'qwen2.5-coder-32b-instruct', stream = false } = req.body;
+
+    const generateChatId = (): string => {
+      return 'chat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    };
+
+    const chatId = generateChatId();
+
+    const requestBody = {
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: message
+        }
+      ],
+      stream
+    };
+
+    console.log(`[BACKEND] Making request to: ${API_PROXY_URL}/chat/completions?chat_id=${chatId}`);
+
+    const response = await axios.post(`${API_PROXY_URL}/chat/completions?chat_id=${chatId}`, requestBody, {
+      headers: {
+        'Authorization': req.headers.authorization,
+        'Content-Type': 'application/json'
+      }
     });
 
-    const aiResponse = JSON.parse(response.data.response);
+    const aiResponse = response.data.choices?.[0]?.message?.content || response.data.response;
 
-    // Process different AI action types
-    switch (aiResponse.action.tool) {
-      case 'execute_command':
-        // Auto-execute command if confirm: false
-        if (!aiResponse.action.parameters.confirm) {
-          try {
-            const cmdResult = await executeCommand(aiResponse.action.parameters.command);
-            aiResponse.executionResult = cmdResult;
-          } catch (error) {
-            aiResponse.executionResult = {
-              success: false,
-              error: error instanceof Error ? error.message : 'Command execution failed'
-            };
-          }
-        }
-        break;
+    if (aiResponse) {
+      try {
+        const parsedResponse = JSON.parse(aiResponse);
 
-      case 'update_file':
-        // Auto-update file if confirm: false
-        if (!aiResponse.action.parameters.confirm) {
-          const fileResult = await updateFile(aiResponse.action.parameters);
-          aiResponse.executionResult = fileResult;
-        }
-        break;
+        // Process different AI action types
+        switch (parsedResponse.action?.tool) {
+          case 'execute_command':
+            // Auto-execute command if confirm: false
+            if (!parsedResponse.action.parameters.confirm) {
+              try {
+                const cmdResult = await executeCommand(parsedResponse.action.parameters.command);
+                parsedResponse.executionResult = cmdResult;
+              } catch (error) {
+                parsedResponse.executionResult = {
+                  success: false,
+                  error: error instanceof Error ? error.message : 'Command execution failed'
+                };
+              }
+            }
+            break;
 
-      case 'protocol_complete':
-        // Auto-end session
-        if (response.data.pageId) {
-          try {
-            await axios.post(`${API_HOST}/api/exit`,
-              { pageId: response.data.pageId },
-              { headers: { 'Authorization': req.headers.authorization } }
-            );
-          } catch (error) {
-            console.error('Failed to auto-end session:', error);
-          }
+          case 'update_file':
+            // Auto-update file if confirm: false
+            if (!parsedResponse.action.parameters.confirm) {
+              const fileResult = await updateFile(parsedResponse.action.parameters);
+              parsedResponse.executionResult = fileResult;
+            }
+            break;
+
+          case 'protocol_complete':
+            // Auto-end session
+            break;
         }
-        break;
+
+        res.json({
+          response: JSON.stringify(parsedResponse),
+          processedResponse: parsedResponse,
+          chat_id: chatId
+        });
+      } catch (jsonError) {
+        console.warn('[BACKEND] Failed to parse AI response as JSON:', jsonError);
+        res.json({
+          response: aiResponse,
+          raw: true,
+          chat_id: chatId
+        });
+      }
+    } else {
+      res.json(response.data);
     }
-
-    res.json({
-      ...response.data,
-      processedResponse: aiResponse
-    });
   } catch (error) {
+    console.error('[BACKEND] Proxy error:', error);
+    handleAPIError(error, res);
+  }
+});
+
+// NEW: Streaming AI endpoint for new Qwen API
+app.post('/api/stream/chat/completions', async (req: Request, res: Response) => {
+  try {
+    const { message, model = 'qwen2.5-coder-32b-instruct', stream = true } = req.body;
+
+    const generateChatId = (): string => {
+      return 'chat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    };
+
+    const chatId = generateChatId();
+
+    const requestBody = {
+      model,
+      messages: [
+        {
+          role: 'user',
+          content: message
+        }
+      ],
+      stream
+    };
+
+    console.log(`[BACKEND] Making streaming request to: ${API_STREAM_URL}/chat/completions?chat_id=${chatId}`);
+
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Headers', 'Cache-Control');
+
+      const response = await fetch(`${API_STREAM_URL}/chat/completions?chat_id=${chatId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': req.headers.authorization as string,
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No readable stream available');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+
+          if (line.startsWith('data: ')) {
+            const dataStr = line.substring(6);
+
+            if (dataStr.trim() === '[DONE]') {
+              res.write('data: [DONE]\n\n');
+              break;
+            }
+
+            res.write(`data: ${dataStr}\n\n`);
+          }
+        }
+      }
+
+      res.end();
+    } else {
+      // Fallback to non-streaming
+      const response = await axios.post(`${API_PROXY_URL}/chat/completions?chat_id=${chatId}`, requestBody, {
+        headers: {
+          'Authorization': req.headers.authorization,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      res.json({
+        ...response.data,
+        chat_id: chatId
+      });
+    }
+  } catch (error) {
+    console.error('[BACKEND] Streaming error:', error);
     handleAPIError(error, res);
   }
 });

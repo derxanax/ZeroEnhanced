@@ -75,11 +75,11 @@ const ensureAuthenticated = async (): Promise<string> => {
     const existingToken = readToken();
     if (existingToken) return existingToken;
 
-    console.log(chalk.yellow('Authentication required.'));
+    console.log(chalk.yellow('Требуется авторизация.'));
 
     while (true) {
         const email = await askQuestion(chalk.cyan('Email: '));
-        const password = await askQuestion(chalk.cyan('Password: '));
+        const password = await askQuestion(chalk.cyan('Пароль: '));
 
         try {
             // ответ: { token: string }
@@ -87,12 +87,12 @@ const ensureAuthenticated = async (): Promise<string> => {
             const token: string = loginResp.data.token;
             saveToken(token);
             await fetchRemaining(token);
-            console.log(chalk.green(`Login successful. Requests left: ${remainingRequests ?? 'N/A'}`));
+            console.log(chalk.green(`Вход выполнен. Запросов осталось: ${remainingRequests ?? 'N/A'}`));
             return token;
         } catch (err: any) {
             if (axios.isAxiosError(err) && err.response?.status === 404) {
                 // Пользователь не найден – предложим зарегистрироваться
-                const answer = await askQuestion(chalk.yellow('User not found. Register new account? (y/n) '));
+                const answer = await askQuestion(chalk.yellow('Пользователь не найден. Создать аккаунт? (y/n) '));
                 if (answer.toLowerCase() !== 'y') {
                     continue;
                 }
@@ -102,22 +102,46 @@ const ensureAuthenticated = async (): Promise<string> => {
                     const token: string = regResp.data.token;
                     saveToken(token);
                     await fetchRemaining(token);
-                    console.log(chalk.green(`Registration successful. Requests left: ${remainingRequests ?? 'N/A'}`));
+                    console.log(chalk.green(`Регистрация прошла успешно. Запросов осталось: ${remainingRequests ?? 'N/A'}`));
                     return token;
                 } catch (regErr: any) {
-                    console.error(chalk.red(regErr.response?.data?.error || 'Registration failed.'));
+                    console.error(chalk.red(regErr.response?.data?.error || 'Ошибка регистрации.'));
                     continue;
                 }
             } else if (axios.isAxiosError(err) && err.response?.status === 401) {
-                console.error(chalk.red('Invalid password.'));
+                console.error(chalk.red('Неверный пароль.'));
                 continue;
             } else {
-                console.error(chalk.red('Login failed:'), err.message);
+                console.error(chalk.red('Ошибка входа:'), err.message);
                 continue;
             }
         }
     }
 };
+
+// Спиннер для анимации загрузки
+class Spinner {
+    private frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+    private interval: NodeJS.Timeout | null = null;
+    private frameIndex = 0;
+    private message = '';
+
+    start(message: string): void {
+        this.message = message;
+        this.interval = setInterval(() => {
+            process.stdout.write(`\r${chalk.cyan(this.frames[this.frameIndex])} ${chalk.yellow(this.message)}`);
+            this.frameIndex = (this.frameIndex + 1) % this.frames.length;
+        }, 100);
+    }
+
+    stop(): void {
+        if (this.interval) {
+            clearInterval(this.interval);
+            this.interval = null;
+            process.stdout.write('\r' + ' '.repeat(50) + '\r');
+        }
+    }
+}
 
 async function main() {
     // для GUI на проде
@@ -133,30 +157,31 @@ async function main() {
         return;
     }
 
-    console.log(chalk.cyan('Initializing Zet...'));
+    console.log(chalk.cyan('🚀 Zet Enhanced запускается...'));
 
     let authToken = await ensureAuthenticated();
 
     const aiService = new AIService();
     const dockerService = new DockerService();
+    const spinner = new Spinner();
 
     while (true) {
         try {
             await dockerService.ensureSandbox();
             await aiService.init(authToken);
             await fetchRemaining(authToken);
-            console.log(chalk.green('Initialization complete. Zet is ready.'));
-            console.log(chalk.gray('Type "exit" or "quit" to end the session.'));
+            console.log(chalk.green('✅ Готов к работе!'));
+            console.log(chalk.gray('Введите "exit" или "quit" для выхода.'));
             break;
         } catch (error: any) {
             if (error.status === 401 || error.status === 403 || error.status === 404) {
-                console.error(chalk.yellow('Stored token is invalid or user is missing (status ' + error.status + '). Re-authentication required.'));
+                console.error(chalk.yellow(`🔄 Токен недействителен (статус ${error.status}). Требуется повторная авторизация.`));
                 deleteToken();
                 authToken = await ensureAuthenticated();
                 continue;
             }
-            const message = error instanceof Error ? error.message : 'An unknown error occurred.';
-            console.error(chalk.red('Fatal error during initialization:'), message);
+            const message = error instanceof Error ? error.message : 'Неизвестная ошибка.';
+            console.error(chalk.red('💥 Критическая ошибка инициализации:'), message);
             process.exit(1);
         }
     }
@@ -168,7 +193,7 @@ async function main() {
         try {
             if (currentPageId !== null) {
                 await axios.post(`${API_HOST}/api/exit`, { pageId: currentPageId }).catch(() => { });
-                console.log(chalk.yellow(`\nPage ${currentPageId} released.`));
+                console.log(chalk.yellow(`\n📄 Страница ${currentPageId} освобождена.`));
             }
         } finally {
             rl.close();
@@ -184,11 +209,11 @@ async function main() {
         const lowered = userInput.toLowerCase().trim();
 
         if (lowered === '/deluser' || lowered === '/logout') {
-            console.log(chalk.yellow('Deleting local session...'));
+            console.log(chalk.yellow('🗑️ Удаление локальной сессии...'));
             deleteToken();
-            console.log(chalk.cyan('Session deleted. Please authenticate again.'));
+            console.log(chalk.cyan('🔄 Сессия удалена. Войдите снова.'));
             authToken = await ensureAuthenticated();
-            lastObservation = 'User explicitly deleted the session and re-authenticated.';
+            lastObservation = 'Пользователь явно удалил сессию и прошел повторную аутентификацию.';
             continue;
         }
 
@@ -197,13 +222,56 @@ async function main() {
         }
 
         try {
-            console.log(chalk.yellow('Zet is thinking...'));
-            const { ai: aiResponse, pageId: newPageId } = await aiService.getCommand(userInput, lastObservation, authToken, currentPageId === null ? undefined : currentPageId);
+            spinner.start('Zet думает...');
 
-            console.log(chalk.magenta(`Thought: ${aiResponse.thought}`));
+            let streamBuffer = '';
+            let isThinking = true;
+            let lastThoughtLength = 0;
+
+            const { ai: aiResponse, pageId: newPageId } = await aiService.getCommand(
+                userInput,
+                lastObservation,
+                authToken,
+                currentPageId === null ? undefined : currentPageId,
+                (chunk: string) => {
+                    spinner.stop();
+                    streamBuffer += chunk;
+
+                    try {
+                        const thoughtMatch = streamBuffer.match(/"thought":\s*"([^"]*(?:\\.[^"]*)*)/);
+                        if (thoughtMatch) {
+                            const thoughtText = thoughtMatch[1]
+                                .replace(/\\n/g, '\n')
+                                .replace(/\\"/g, '"')
+                                .replace(/\\\\/g, '\\');
+
+                            if (thoughtText.length > lastThoughtLength) {
+                                if (isThinking) {
+                                    process.stdout.write(chalk.magenta('💭 '));
+                                    isThinking = false;
+                                }
+
+                                const newText = thoughtText.slice(lastThoughtLength);
+                                process.stdout.write(chalk.cyan(newText));
+                                lastThoughtLength = thoughtText.length;
+                            }
+                        }
+                    } catch (e) {
+
+                    }
+                }
+            );
+
+            spinner.stop();
+
+            if (lastThoughtLength === 0) {
+                console.log(chalk.magenta(`💭 ${aiResponse.thought}`));
+            } else {
+                console.log('');
+            }
 
             if (aiResponse.displayText) {
-                console.log(chalk.cyan(`\n${aiResponse.displayText}`));
+                console.log(chalk.cyan(`\n📝 ${aiResponse.displayText}`));
             }
 
             const { tool, parameters } = aiResponse.action;
@@ -211,11 +279,11 @@ async function main() {
             if (tool === 'protocol_complete') {
                 if (currentPageId !== null) {
                     await axios.post(`${API_HOST}/api/exit`, { pageId: currentPageId }).catch(() => { });
-                    console.log(chalk.yellow(`Page ${currentPageId} released.`));
+                    console.log(chalk.yellow(`📄 Страница ${currentPageId} освобождена.`));
                 }
-                console.log(chalk.green('Zet: Task complete. Ready for new task.'));
+                console.log(chalk.green('✅ Задача завершена. Готов к новой задаче.'));
                 currentPageId = null;
-                lastObservation = 'Previous task was completed successfully. Ready for a new task.';
+                lastObservation = 'Предыдущая задача была успешно завершена. Готов к новой задаче.';
                 continue;
             }
 
@@ -223,28 +291,39 @@ async function main() {
                 const cmdParams = parameters as { command: string; confirm: boolean; prompt?: string };
 
                 if (cmdParams.confirm) {
-                    const confirmPrompt = cmdParams.prompt || `Execute command "${cmdParams.command}"? (y/n)`;
-                    const confirmation = await askQuestion(chalk.red(`${confirmPrompt} `));
+                    const confirmPrompt = cmdParams.prompt || `Выполнить команду "${cmdParams.command}"? (y/n)`;
+                    const confirmation = await askQuestion(chalk.red(`⚠️ ${confirmPrompt} `));
                     if (confirmation.toLowerCase() !== 'y') {
-                        console.log(chalk.yellow('Command aborted by user.'));
-                        lastObservation = 'User aborted the previous command.';
+                        console.log(chalk.yellow('❌ Команда отменена пользователем.'));
+                        lastObservation = 'Пользователь отменил выполнение предыдущей команды.';
                         continue;
                     }
                 }
 
-                console.log(chalk.yellow(`Executing: ${cmdParams.command}`));
-                const { stdout, stderr } = await dockerService.executeCommand(cmdParams.command);
+                console.log(chalk.yellow(`⚡ Выполняется: ${cmdParams.command}`));
 
-                if (stdout) {
-                    console.log(chalk.green(stdout));
-                    lastObservation = `Command "${cmdParams.command}" executed and returned:\n${stdout}`;
-                }
-                if (stderr) {
-                    console.error(chalk.red(stderr));
-                    lastObservation = `Command "${cmdParams.command}" failed with error:\n${stderr}`;
-                }
-                if (!stdout && !stderr) {
-                    lastObservation = `Command "${cmdParams.command}" executed with no output.`;
+                try {
+                    const { stdout, stderr } = await dockerService.executeCommand(cmdParams.command);
+
+                    if (stdout) {
+                        console.log(chalk.green('📤 Результат:'));
+                        console.log(stdout);
+                        lastObservation = `Команда "${cmdParams.command}" выполнена и вернула:\n${stdout}`;
+                    }
+
+                    if (stderr) {
+                        console.error(chalk.red('🔥 Ошибка:'));
+                        console.error(stderr);
+                        lastObservation = `Команда "${cmdParams.command}" завершилась с ошибкой:\n${stderr}`;
+                    }
+
+                    if (!stdout && !stderr) {
+                        console.log(chalk.gray('✅ Команда выполнена без вывода.'));
+                        lastObservation = `Команда "${cmdParams.command}" выполнена без вывода.`;
+                    }
+                } catch (dockerError) {
+                    console.error(chalk.red('🐳 Ошибка Docker:'), dockerError);
+                    lastObservation = `Команда "${cmdParams.command}" не смогла выполниться: ${dockerError instanceof Error ? dockerError.message : 'Неизвестная ошибка Docker'}`;
                 }
             }
 
@@ -252,17 +331,17 @@ async function main() {
                 const p: any = parameters;
                 const targetFile = p.file;
                 const shouldConfirm = p.confirm === true;
-                const promptText = p.prompt || `Update file "${targetFile}"? (y/n)`;
+                const promptText = p.prompt || `Обновить файл "${targetFile}"? (y/n)`;
 
                 let shouldProceed = true;
                 if (shouldConfirm) {
-                    const answer = await askQuestion(chalk.yellow(`${promptText} `));
+                    const answer = await askQuestion(chalk.yellow(`📝 ${promptText} `));
                     shouldProceed = answer.toLowerCase() === 'y';
                 }
 
                 if (!shouldProceed) {
-                    console.log(chalk.yellow('Update aborted by user.'));
-                    lastObservation = 'User aborted file update.';
+                    console.log(chalk.yellow('❌ Обновление отменено пользователем.'));
+                    lastObservation = 'Пользователь отменил обновление файла.';
                 } else {
                     try {
                         const absPath = path.isAbsolute(targetFile)
@@ -278,7 +357,7 @@ async function main() {
                             const fileLines = fileExists ? fs.readFileSync(absPath, 'utf-8').split(/\r?\n/) : [];
                             let workingLines = [...fileLines];
 
-                            console.log(chalk.cyan('Applying line operations:'));
+                            console.log(chalk.cyan('🔧 Применяю изменения по строкам:'));
 
                             const operations = Object.entries(p.line_operations).sort(([a], [b]) => parseInt(b) - parseInt(a));
 
@@ -289,18 +368,18 @@ async function main() {
                                 switch (op.action) {
                                     case 'insert':
                                         workingLines.splice(lineIndex, 0, op.content || '');
-                                        console.log(chalk.green(`  ✓ Inserted line ${lineNum}: ${op.content}`));
+                                        console.log(chalk.green(`  ➕ Вставлена строка ${lineNum}: ${op.content}`));
                                         break;
                                     case 'replace':
                                         if (lineIndex < workingLines.length) {
                                             workingLines[lineIndex] = op.content || '';
-                                            console.log(chalk.yellow(`  ✓ Replaced line ${lineNum}: ${op.content}`));
+                                            console.log(chalk.yellow(`  🔄 Заменена строка ${lineNum}: ${op.content}`));
                                         }
                                         break;
                                     case 'delete':
                                         if (lineIndex < workingLines.length) {
                                             workingLines.splice(lineIndex, 1);
-                                            console.log(chalk.red(`  ✓ Deleted line ${lineNum}`));
+                                            console.log(chalk.red(`  ➖ Удалена строка ${lineNum}`));
                                         }
                                         break;
                                 }
@@ -309,6 +388,7 @@ async function main() {
                         }
                         else if (p.code_lines) {
                             newContent = p.code_lines.join('\n');
+                            console.log(chalk.cyan(`📝 Создание/обновление файла из ${p.code_lines.length} строк`));
                         }
                         else if (p.code) {
                             const editMode = p.edit as boolean;
@@ -317,19 +397,21 @@ async function main() {
                                 const before = fileLines.slice(0, p.startLine - 1);
                                 const after = fileLines.slice(p.endLine);
                                 newContent = [...before, ...p.code.split(/\r?\n/), ...after].join('\n');
+                                console.log(chalk.cyan(`📝 Редактирование строк ${p.startLine}-${p.endLine} в файле`));
                             } else {
                                 newContent = p.code;
+                                console.log(chalk.cyan('📝 Создание/замена всего файла'));
                             }
                         } else {
-                            throw new Error('No code content provided (code, code_lines, or line_operations required)');
+                            throw new Error('Не предоставлен контент для кода (требуется code, code_lines или line_operations)');
                         }
 
                         fs.writeFileSync(absPath, newContent, 'utf-8');
-                        console.log(chalk.green(`File ${targetFile} updated successfully.`));
-                        lastObservation = `File ${targetFile} updated successfully.`;
+                        console.log(chalk.green(`✅ Файл ${targetFile} успешно обновлен.`));
+                        lastObservation = `Файл ${targetFile} успешно обновлен.`;
                     } catch (err) {
-                        console.error(chalk.red(`Failed to update file: ${(err as Error).message}`));
-                        lastObservation = `Failed to update file: ${(err as Error).message}`;
+                        console.error(chalk.red(`💥 Ошибка обновления файла: ${(err as Error).message}`));
+                        lastObservation = `Ошибка обновления файла: ${(err as Error).message}`;
                     }
                 }
             }
@@ -340,40 +422,42 @@ async function main() {
                 currentPageId = newPageId;
             }
         } catch (error: any) {
-            console.error(chalk.red('\n--- Error Details ---'));
+            spinner.stop();
+            console.error(chalk.red('\n🚨 Ошибка:'));
 
             if (error.message && error.message.includes('JSON')) {
-                console.error(chalk.red('JSON parsing error detected. This may be due to:'));
-                console.error(chalk.yellow('1. Server response formatting issues'));
-                console.error(chalk.yellow('2. Network corruption'));
-                console.error(chalk.yellow('3. API response truncation'));
-                console.error(chalk.gray('Full error:'), error.message);
-                lastObservation = 'The AI response contained malformed JSON and could not be processed. Please try rephrasing your request.';
+                console.error(chalk.red('📝 Ошибка парсинга JSON. Возможные причины:'));
+                console.error(chalk.yellow('• Проблемы с форматированием ответа сервера'));
+                console.error(chalk.yellow('• Повреждение данных при передаче'));
+                lastObservation = 'Ответ ИИ содержал некорректный JSON и не мог быть обработан. Попробуйте переформулировать запрос.';
             } else if (error.status === 429) {
-                console.error(chalk.red('Request limit exceeded. Please upgrade your plan.'));
-                lastObservation = 'The previous command failed because the request limit was exceeded.';
+                console.error(chalk.red('🚫 Превышен лимит запросов.'));
+                lastObservation = 'Предыдущая команда не выполнилась из-за превышения лимита запросов.';
             } else if (error.status === 401 || error.status === 403 || error.status === 404) {
-                console.error(chalk.red('Authentication error. Your session may have expired.'));
+                console.error(chalk.red('🔑 Ошибка аутентификации. Возможно, сессия истекла.'));
                 deleteToken();
                 authToken = await ensureAuthenticated();
-                lastObservation = 'Authentication failed (status ' + error.status + '). A new login process has been started.';
+                lastObservation = `Ошибка аутентификации (статус ${error.status}). Начат новый процесс входа.`;
                 if (error.status === 400 || error.status === 404) {
                     currentPageId = null;
                 }
+            } else if (error.message && error.message.includes('fetch')) {
+                console.error(chalk.red('🌐 Ошибка сети: Не удалось подключиться к API стриминга'));
+                lastObservation = 'Ошибка сетевого подключения. API стриминга может быть временно недоступен.';
             } else {
-                const message = error.message || 'An unknown error occurred.';
-                console.error(chalk.red('An error occurred:'), message);
-                if (error.stack) {
-                    console.error(chalk.gray('Stack trace:'), error.stack);
-                }
-                lastObservation = `The last action failed with error: ${message}. I should probably try something else.`;
+                const message = error.message || 'Произошла неизвестная ошибка.';
+                console.error(chalk.red('💥 Произошла ошибка:'), message);
+                lastObservation = `Последнее действие завершилось с ошибкой: ${message}. Попробую что-то другое.`;
             }
 
-            console.error(chalk.red('--- End Error Details ---\n'));
+            if (error.status === 503 || (error.message && error.message.includes('503'))) {
+                console.log(chalk.yellow('🔄 Сервис временно недоступен. Повтор через 5 секунд...'));
+                await new Promise(resolve => setTimeout(resolve, 5000));
+            }
         }
     }
     rl.close();
-    console.log(chalk.cyan('Session terminated.'));
+    console.log(chalk.cyan('👋 Сессия завершена. Спасибо за использование Zet Enhanced!'));
 }
 
 main(); 

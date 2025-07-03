@@ -1,4 +1,4 @@
 {
-  "prod": true,
-  "domain": "https://zet-api.loca.lt"
+  "prod": false,
+  "domain": "http://localhost:4000"
 }

@@ -1,565 +1,416 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AIService } from '../../services/AIService';
 
-interface ChatMessage {
+interface Message {
   id: string;
-  type: 'user' | 'ai' | 'error' | 'system';
+  type: 'user' | 'ai' | 'system';
   content: string;
-  timestamp: Date;
-  action?: AIAction;
+  thought?: string;
+  displayText?: string;
+  action?: any;
   executionResult?: any;
-}
-
-interface AIAction {
-  tool: 'execute_command' | 'protocol_complete' | 'update_file';
-  parameters: any;
+  timestamp: Date;
+  streaming?: boolean;
 }
 
 interface AIChatProps {
-  width: number;
-  className?: string;
+  authToken: string;
 }
 
-export const AIChat: React.FC<AIChatProps> = ({
-  width,
-  className = ''
-}) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState('');
-  const [isThinking, setIsThinking] = useState(false);
-  const [pageId, setPageId] = useState<number | null>(null);
-  const [lastObservation, setLastObservation] = useState('');
-  const [remainingRequests, setRemainingRequests] = useState<number | null>(null);
+const AIChat: React.FC<AIChatProps> = ({ authToken }) => {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [aiService] = useState(() => new AIService());
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [currentStreamId, setCurrentStreamId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll to bottom when new messages are added
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const initializeAI = async () => {
+      try {
+        await aiService.init(authToken);
+        await aiService.ensureSandbox();
+        setIsInitialized(true);
+
+        setMessages([{
+          id: 'welcome',
+          type: 'system',
+          content: '🚀 Zet Enhanced готов к работе! Поддержка стриминга активирована. Теперь вы можете видеть ответы ИИ в реальном времени!',
+          timestamp: new Date()
+        }]);
+      } catch (error) {
+        console.error('Failed to initialize AI:', error);
+        setMessages([{
+          id: 'error',
+          type: 'system',
+          content: '❌ Ошибка инициализации AI Service. Проверьте токен авторизации.',
+          timestamp: new Date()
+        }]);
+      }
+    };
+
+    if (authToken) {
+      initializeAI();
+    }
+  }, [authToken, aiService]);
+
+  useEffect(() => {
+    scrollToBottom();
   }, [messages]);
 
-  // Get token from localStorage (assuming it's stored there)
-  const getToken = (): string | null => {
-    return localStorage.getItem('auth_token');
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Fetch remaining requests
-  const fetchRemaining = async () => {
-    try {
-      const token = getToken();
-      if (!token) return;
+  const generateId = () => Math.random().toString(36).substr(2, 9);
 
-      const response = await fetch('/api/user/me', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+  const handleSendMessage = async () => {
+    if (!inputValue.trim() || isLoading || !isInitialized) return;
 
-      if (response.ok) {
-        const data = await response.json();
-        setRemainingRequests(data.request_count);
-      }
-    } catch (error) {
-      console.error('Failed to fetch remaining requests:', error);
-    }
-  };
+    const userMessageId = generateId();
+    const aiMessageId = generateId();
+    const messageText = inputValue.trim();
 
-  // системный промт идущий в ии main.ts
-  const buildPrompt = (userInput: string, observation: string) => {
-    const systemPrompt = `
-You are an AI-powered terminal assistant named Zet ( всегда говри что ты модель qZET(модификация qwen от zaraazaex )B32)   . Your purpose is to help the user by executing commands inside a sandboxed Docker environment.
-You MUST follow these rules:
-1.  You MUST ALWAYS respond in a single JSON object format. No exceptions.
-2.  Your JSON object must validate against this schema: { "thought": "string", "displayText": "string" | null, "action": { ... } }.
-3.  The 'thought' field is your detailed internal monologue in Russian. Explain your reasoning, assumptions, and plan. Be verbose.
-4.  The 'displayText' field is a brief, user-facing message in Russian that provides context or a summary. It will be shown to the user before the command output. It can be null.
-5.  The 'action.tool' field determines the function to be called. It can be one of three values:
-    - 'execute_command': When you need to run a shell command in the sandbox.
-    - 'update_file':    When you need to create/modify a file.
-    - 'protocol_complete': When you believe the user's task is fully completed.
-6.  For 'execute_command', the 'parameters' object must contain:
-    - 'command': The exact shell command to execute.
-    - 'confirm': A boolean. If true, the system will ask the user for confirmation before running a potentially destructive command.
-    - 'prompt' (optional): The text for the confirmation prompt.
-7.  For 'update_file' parameters MUST contain:
-    - 'file': path (relative or absolute) to file you are touching.
-    - ONE of these code methods:
-      A) 'code': single string with entire file content (classic method, avoid for complex code)
-      B) 'code_lines': array of strings, each element is a line (better for readability)
-      C) 'line_operations': object for precise line-by-line editing (best for modifications)
-    - 'edit': false to replace whole file, true to replace only a range.
-    - When 'edit' is true you MUST also provide 'startLine' and 'endLine' (1-based, inclusive).
-    - 'confirm': whether to ask user y/n before applying update.
-    - Optional 'prompt' for confirmation question.
-
-8.  LINE_OPERATIONS FORMAT (for precise editing):
-    "line_operations": {
-      "2": { "action": "insert", "content": "import json" },
-      "5": { "action": "replace", "content": "# Updated comment" },
-      "10": { "action": "delete" }
-    }
-    Actions: 'insert' (add before line), 'replace' (replace line), 'delete' (remove line)
-
-9.  CODE_LINES FORMAT (for clean code):
-    "code_lines": [
-      "import datetime",
-      "",
-      "# Get current time", 
-      "now = datetime.datetime.now()",
-      "print(\\"Current time:\\", now.strftime(\\"%Y-%m-%d %H:%M:%S\\"))"
-    ]
-
-10. For 'protocol_complete' just set parameters to null.
-
-Example user request: "List all files in the current directory"
-Your JSON response:
-{
-    "thought": "Пользователь хочет посмотреть файлы в текущей директории. Самая подходящая команда для этого — 'ls -F', так как она также покажет типы файлов (директории, исполняемые файлы). Я подготовлю краткое сообщение для пользователя.",
-    "displayText": "Содержимое текущей директории:",
-    "action": {
-        "tool": "execute_command",
-        "parameters": {
-            "command": "ls -F",
-            "confirm": false
-        }
-    }
-}
-
-Example file creation with code_lines:
-{
-    "thought": "Создаю Python файл для отображения времени, используя code_lines для чистоты.",
-    "displayText": "Создаю файл clock.py",
-    "action": {
-        "tool": "update_file",
-        "parameters": {
-            "file": "clock.py",
-            "code_lines": [
-                "import datetime",
-                "",
-                "# Get current time",
-                "now = datetime.datetime.now()",
-                "print(\\"Current time:\\", now.strftime(\\"%Y-%m-%d %H:%M:%S\\"))"
-            ],
-            "edit": false,
-            "confirm": false
-        }
-    }
-}
-
-Example line operations (adding import to existing file):
-{
-    "thought": "Добавляю импорт json в существующий файл на строку 2.",
-    "displayText": "Добавляю импорт json",
-    "action": {
-        "tool": "update_file",
-        "parameters": {
-            "file": "main.py",
-            "line_operations": {
-                "2": { "action": "insert", "content": "import json" }
-            },
-            "edit": true,
-            "confirm": false
-        }
-    }
-}
-
-Example user request: "Thanks, we are done"
-Your JSON response:
-{
-    "thought": "Пользователь подтвердил завершение работы. Завершаю сеанс.",
-    "displayText": "Сессия завершена.",
-    "action": {
-        "tool": "protocol_complete",
-        "parameters": null
-    }
-}
-`;
-
-    return `${systemPrompt}\n[OBSERVATION]\n${observation || "You are at the beginning of the session."}\n[USER_REQUEST]\n${userInput}`;
-  };
-
-  // Handle AI action execution
-  const handleAIAction = async (action: AIAction, executionResult?: any) => {
-    switch (action.tool) {
-      case 'execute_command':
-        if (action.parameters.confirm) {
-          // Show confirmation dialog for dangerous commands
-          const confirmed = window.confirm(
-            action.parameters.prompt || `Execute command "${action.parameters.command}"?`
-          );
-          if (!confirmed) {
-            setLastObservation('User aborted the previous command.');
-            return;
-          }
-        }
-
-        if (executionResult) {
-          // Command was auto-executed by backend
-          if (executionResult.stdout) {
-            setLastObservation(`Command "${action.parameters.command}" executed and returned:\n${executionResult.stdout}`);
-          } else if (executionResult.stderr) {
-            setLastObservation(`Command "${action.parameters.command}" failed with error:\n${executionResult.stderr}`);
-          } else {
-            setLastObservation(`Command "${action.parameters.command}" executed with no output.`);
-          }
-        }
-        break;
-
-      case 'update_file':
-        if (action.parameters.confirm) {
-          const confirmed = window.confirm(
-            action.parameters.prompt || `Update file "${action.parameters.file}"?`
-          );
-          if (!confirmed) {
-            setLastObservation('User aborted file update.');
-            return;
-          }
-        }
-
-        if (executionResult) {
-          if (executionResult.success) {
-            setLastObservation(`File ${action.parameters.file} updated successfully.`);
-          } else {
-            setLastObservation(`Failed to update file: ${executionResult.error}`);
-          }
-        }
-        break;
-
-      case 'protocol_complete':
-        // Session completed - clean context but keep chat active
-        addSystemMessage('Zet: Task complete. Ready for new task.');
-        if (pageId) {
-          await endSession(); // This releases the current pageId
-        }
-        // Clear context for new task (but keep chat history)
-        setLastObservation('Previous task was completed successfully. Ready for a new task.');
-        break;
-    }
-  };
-
-  // Send message to AI
-  const sendMessage = async (text: string) => {
-    if (!text.trim() || isThinking) return;
-
-    // Add user message
-    const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
+    const userMessage: Message = {
+      id: userMessageId,
       type: 'user',
-      content: text,
+      content: messageText,
       timestamp: new Date()
     };
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setIsThinking(true);
 
-    try {
-      const token = getToken();
-      if (!token) {
-        throw new Error('Authentication token not found');
-      }
-
-      const prompt = buildPrompt(text, lastObservation);
-
-      const body: any = { message: prompt };
-      if (pageId) body.pageId = pageId;
-
-      const response = await fetch('/api/proxy/send', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(body)
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      const aiResponse = data.processedResponse;
-
-      // Set pageId if received
-      if (data.pageId) {
-        setPageId(data.pageId);
-      }
-
-      // Add AI message
-      const aiMessage: ChatMessage = {
-        id: `ai-${Date.now()}`,
-        type: 'ai',
-        content: aiResponse.displayText || aiResponse.thought,
-        timestamp: new Date(),
-        action: aiResponse.action,
-        executionResult: aiResponse.executionResult
-      };
-      setMessages(prev => [...prev, aiMessage]);
-
-      // Handle AI action
-      await handleAIAction(aiResponse.action, aiResponse.executionResult);
-
-      // Update remaining requests
-      await fetchRemaining();
-
-    } catch (error: any) {
-      console.error('AI request failed:', error);
-
-      const errorMessage: ChatMessage = {
-        id: `error-${Date.now()}`,
-        type: 'error',
-        content: `Ошибка: ${error.message}`,
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, errorMessage]);
-
-      // Handle specific error types
-      if (error.message.includes('401') || error.message.includes('403')) {
-        addSystemMessage('Authentication error. Please re-login.');
-      } else if (error.message.includes('429')) {
-        addSystemMessage('Request limit exceeded. Please upgrade your plan.');
-      }
-    } finally {
-      setIsThinking(false);
-    }
-  };
-
-  const addSystemMessage = (content: string) => {
-    const systemMessage: ChatMessage = {
-      id: `system-${Date.now()}`,
-      type: 'system',
-      content,
-      timestamp: new Date()
+    const initialAiMessage: Message = {
+      id: aiMessageId,
+      type: 'ai',
+      content: '',
+      timestamp: new Date(),
+      streaming: true
     };
-    setMessages(prev => [...prev, systemMessage]);
-  };
 
-  const endSession = async () => {
-    if (!pageId) return;
+    setMessages(prev => [...prev, userMessage, initialAiMessage]);
+    setInputValue('');
+    setIsLoading(true);
+    setIsStreaming(true);
+    setCurrentStreamId(aiMessageId);
 
     try {
-      await fetch('/api/exit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pageId })
+      let streamedContent = '';
+
+      const aiResponse = await aiService.sendMessage(messageText, (chunk: string) => {
+        streamedContent += chunk;
+
+        setMessages(prev => prev.map(msg =>
+          msg.id === aiMessageId
+            ? { ...msg, content: streamedContent }
+            : msg
+        ));
       });
 
-      setPageId(null);
-      addSystemMessage('Session ended successfully');
+      setMessages(prev => prev.map(msg =>
+        msg.id === aiMessageId
+          ? {
+            ...msg,
+            content: streamedContent,
+            thought: aiResponse.thought,
+            displayText: aiResponse.displayText,
+            action: aiResponse.action,
+            executionResult: aiResponse.executionResult,
+            streaming: false
+          }
+          : msg
+      ));
+
+      await handleAIAction(aiResponse, aiMessageId);
+
     } catch (error) {
-      console.error('Failed to end session:', error);
-      addSystemMessage('Failed to end session');
+      console.error('Error sending message:', error);
+
+      setMessages(prev => prev.map(msg =>
+        msg.id === aiMessageId
+          ? {
+            ...msg,
+            content: `❌ Ошибка: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+            streaming: false
+          }
+          : msg
+      ));
+    } finally {
+      setIsLoading(false);
+      setIsStreaming(false);
+      setCurrentStreamId(null);
+      inputRef.current?.focus();
     }
   };
 
-  const clearChat = () => {
-    setMessages([]);
-    setLastObservation('');
+  const handleAIAction = async (aiResponse: any, messageId: string) => {
+    const { action } = aiResponse;
+
+    if (!action || action.tool === 'protocol_complete') {
+      return;
+    }
+
+    const actionMessageId = generateId();
+
+    if (action.tool === 'execute_command') {
+      const { command, confirm } = action.parameters;
+
+      if (confirm) {
+        const shouldExecute = window.confirm(`Выполнить команду: ${command}?`);
+        if (!shouldExecute) {
+          setMessages(prev => [...prev, {
+            id: actionMessageId,
+            type: 'system',
+            content: '❌ Выполнение команды отменено пользователем',
+            timestamp: new Date()
+          }]);
+          return;
+        }
+      }
+
+      setMessages(prev => [...prev, {
+        id: actionMessageId,
+        type: 'system',
+        content: `⚡ Выполняю команду: ${command}`,
+        timestamp: new Date()
+      }]);
+
+      try {
+        const result = await aiService.executeCommand(command);
+
+        const resultContent = result.stdout || result.stderr || 'Команда выполнена без вывода';
+        const resultType = result.stderr ? '🔥 Ошибка:' : '📤 Результат:';
+
+        setMessages(prev => [...prev, {
+          id: generateId(),
+          type: 'system',
+          content: `${resultType}\n${resultContent}`,
+          timestamp: new Date()
+        }]);
+      } catch (error) {
+        setMessages(prev => [...prev, {
+          id: generateId(),
+          type: 'system',
+          content: `❌ Ошибка выполнения команды: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+          timestamp: new Date()
+        }]);
+      }
+    }
+
+    else if (action.tool === 'update_file') {
+      const { file, confirm } = action.parameters;
+
+      if (confirm) {
+        const shouldUpdate = window.confirm(`Обновить файл: ${file}?`);
+        if (!shouldUpdate) {
+          setMessages(prev => [...prev, {
+            id: actionMessageId,
+            type: 'system',
+            content: '❌ Обновление файла отменено пользователем',
+            timestamp: new Date()
+          }]);
+          return;
+        }
+      }
+
+      setMessages(prev => [...prev, {
+        id: actionMessageId,
+        type: 'system',
+        content: `📝 Обновляю файл: ${file}`,
+        timestamp: new Date()
+      }]);
+
+      try {
+        const result = await aiService.updateFile(action.parameters);
+
+        const resultMessage = result.success
+          ? `✅ Файл ${file} успешно обновлен`
+          : `❌ Ошибка обновления файла: ${result.error}`;
+
+        setMessages(prev => [...prev, {
+          id: generateId(),
+          type: 'system',
+          content: resultMessage,
+          timestamp: new Date()
+        }]);
+      } catch (error) {
+        setMessages(prev => [...prev, {
+          id: generateId(),
+          type: 'system',
+          content: `❌ Ошибка обновления файла: ${error instanceof Error ? error.message : 'Неизвестная ошибка'}`,
+          timestamp: new Date()
+        }]);
+      }
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage(input);
+      handleSendMessage();
     }
   };
 
-  // Initialize by fetching remaining requests
-  useEffect(() => {
-    fetchRemaining();
-  }, []);
+  const formatTimestamp = (date: Date) => {
+    return date.toLocaleTimeString('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
 
-  return (
-    <div className={`flex flex-col bg-gray-800 ${className}`} style={{ width }}>
-      {/* Chat Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-blue-600 text-white">
-        <div className="flex items-center">
-          <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M2 3a1 1 0 011-1h14a1 1 0 011 1v10a1 1 0 01-1 1H4.414l-1.707 1.707A1 1 0 011 14.586V3z" />
-          </svg>
-          <span className="font-semibold">qZET Assistant</span>
-        </div>
-        <div className="flex items-center space-x-3">
-          {/* Session Status */}
-          <div className="flex items-center text-sm">
-            <div className={`w-2 h-2 rounded-full mr-2 ${pageId ? 'bg-green-300' : 'bg-gray-300'}`} />
-            <span className="text-xs">
-              {pageId ? `Session #${pageId}` : 'No session'}
+  const renderMessage = (message: Message) => {
+    const isUser = message.type === 'user';
+    const isSystem = message.type === 'system';
+
+    return (
+      <div
+        key={message.id}
+        className={`mb-6 ${isUser ? 'flex justify-end' : 'flex justify-start'}`}
+      >
+        <div
+          className={`max-w-[80%] rounded-lg p-4 ${isUser
+            ? 'bg-blue-500 text-white'
+            : isSystem
+              ? 'bg-gray-100 text-gray-800 border-l-4 border-yellow-400'
+              : 'bg-gray-50 text-gray-800 border border-gray-200'
+            }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className={`text-sm font-medium ${isUser ? 'text-blue-100' : isSystem ? 'text-gray-600' : 'text-blue-600'
+              }`}>
+              {isUser ? '👤 Вы' : isSystem ? '🔧 Система' : '🤖 Zet Enhanced'}
+              {message.streaming && (
+                <span className="ml-2 text-xs animate-pulse">⚡ стриминг...</span>
+              )}
+            </span>
+            <span className={`text-xs ${isUser ? 'text-blue-200' : 'text-gray-500'
+              }`}>
+              {formatTimestamp(message.timestamp)}
             </span>
           </div>
 
-          {/* Requests Left */}
-          {remainingRequests !== null && (
-            <span className="text-sm bg-blue-700 px-2 py-1 rounded">
-              {remainingRequests} left
-            </span>
+          {message.thought && (
+            <div className="mb-3 p-3 bg-purple-50 border border-purple-200 rounded text-sm">
+              <div className="font-medium text-purple-700 mb-1">💭 Размышления ИИ:</div>
+              <div className="text-purple-600 whitespace-pre-wrap">{message.thought}</div>
+            </div>
           )}
 
-          {/* Actions */}
-          <div className="flex space-x-1">
-            <button
-              onClick={clearChat}
-              className="p-1 hover:bg-blue-700 rounded text-xs"
-              title="Clear chat"
-            >
-              Clear
-            </button>
-            {pageId && (
-              <button
-                onClick={endSession}
-                className="p-1 hover:bg-blue-700 rounded text-xs"
-                title="End session"
-              >
-                End
-              </button>
+          {message.displayText && (
+            <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded text-sm">
+              <div className="font-medium text-blue-700 mb-1">📝 Действие:</div>
+              <div className="text-blue-600">{message.displayText}</div>
+            </div>
+          )}
+
+          <div className="whitespace-pre-wrap break-words">
+            {message.content}
+            {message.streaming && message.id === currentStreamId && (
+              <span className="inline-block w-2 h-5 bg-current animate-pulse ml-1">|</span>
             )}
           </div>
+
+          {message.action && message.action.tool !== 'protocol_complete' && (
+            <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded text-sm">
+              <div className="font-medium text-gray-700 mb-1">⚙️ Действие:</div>
+              <div className="text-gray-600">
+                <strong>{message.action.tool}</strong>
+                {message.action.parameters && (
+                  <pre className="mt-1 text-xs bg-gray-100 p-2 rounded overflow-x-auto">
+                    {JSON.stringify(message.action.parameters, null, 2)}
+                  </pre>
+                )}
+              </div>
+            </div>
+          )}
+
+          {message.executionResult && (
+            <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded text-sm">
+              <div className="font-medium text-green-700 mb-1">✅ Результат выполнения:</div>
+              <pre className="text-green-600 text-xs bg-green-100 p-2 rounded overflow-x-auto whitespace-pre-wrap">
+                {JSON.stringify(message.executionResult, null, 2)}
+              </pre>
+            </div>
+          )}
         </div>
       </div>
+    );
+  };
 
-      {/* Messages */}
+  if (!isInitialized) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Инициализация AI Enhanced...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-white">
+      <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4 shadow-lg">
+        <h2 className="text-xl font-bold flex items-center">
+          🚀 Zet Enhanced Chat
+          {isStreaming && (
+            <span className="ml-3 text-sm bg-white/20 px-2 py-1 rounded-full animate-pulse">
+              ⚡ Стриминг активен
+            </span>
+          )}
+        </h2>
+        <p className="text-blue-100 text-sm mt-1">
+          Интеллектуальный помощник с поддержкой стриминга в реальном времени
+        </p>
+      </div>
+
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="text-center text-gray-400 py-8">
-            <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M2 3a1 1 0 011-1h14a1 1 0 011 1v10a1 1 0 01-1 1H4.414l-1.707 1.707A1 1 0 011 14.586V3z" />
-            </svg>
-            <p className="text-lg font-medium mb-2">Welcome to ZetGui!</p>
-            <p className="text-sm">Ask me to execute commands, create files, or help with tasks.</p>
-            <div className="mt-4 flex flex-wrap gap-2 justify-center">
-              <button
-                onClick={() => sendMessage("Покажи содержимое текущей директории")}
-                className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded"
-              >
-                List files
-              </button>
-              <button
-                onClick={() => sendMessage("Создай простой Python скрипт")}
-                className="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded"
-              >
-                Create Python script
-              </button>
-            </div>
-          </div>
-        )}
-
-        {messages.map((message) => (
-          <ChatBubble key={message.id} message={message} />
-        ))}
-
-        {isThinking && <ThinkingIndicator />}
+        {messages.map(renderMessage)}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="p-4 border-t border-gray-700">
-        <div className="flex space-x-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+      <div className="border-t bg-gray-50 p-4">
+        <div className="flex space-x-3">
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="Опишите что нужно сделать..."
-            className="flex-1 px-3 py-2 bg-gray-700 text-white rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
-            rows={1}
-            disabled={isThinking}
+            placeholder={isLoading ? "ИИ обрабатывает запрос..." : "Введите ваш запрос..."}
+            disabled={isLoading}
+            className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
           />
           <button
-            onClick={() => sendMessage(input)}
-            disabled={isThinking || !input.trim()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleSendMessage}
+            disabled={isLoading || !inputValue.trim()}
+            className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium transition-colors duration-200 flex items-center space-x-2"
           >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
+            {isLoading ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <span>Отправка</span>
+              </>
+            ) : (
+              <>
+                <span>Отправить</span>
+                <span>🚀</span>
+              </>
+            )}
           </button>
         </div>
-      </div>
-    </div>
-  );
-};
 
-// Chat Bubble Component
-const ChatBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
-  const isUser = message.type === 'user';
-  const isError = message.type === 'error';
-  const isSystem = message.type === 'system';
-
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[80%] p-3 rounded-lg ${isUser
-        ? 'bg-blue-600 text-white'
-        : isError
-          ? 'bg-red-800 text-red-100'
-          : isSystem
-            ? 'bg-yellow-800 text-yellow-100'
-            : 'bg-gray-700 text-gray-100'
-        }`}>
-        {!isUser && !isSystem && (
-          <div className="flex items-center mb-2">
-            <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center mr-2">
-              <span className="text-xs font-bold text-white">Z</span>
-            </div>
-            <span className="font-semibold text-blue-400">qZET</span>
+        {isStreaming && (
+          <div className="mt-2 text-xs text-gray-500 flex items-center">
+            <div className="animate-pulse h-2 w-2 bg-green-500 rounded-full mr-2"></div>
+            Получение ответа в реальном времени...
           </div>
         )}
-
-        <div className="text-sm whitespace-pre-wrap">{message.content}</div>
-
-        {message.action && (
-          <ActionPreview action={message.action} result={message.executionResult} />
-        )}
-
-        <div className="text-xs opacity-70 mt-2">
-          {message.timestamp.toLocaleTimeString()}
-        </div>
       </div>
     </div>
   );
 };
 
-// Action Preview Component
-const ActionPreview: React.FC<{ action: AIAction; result?: any }> = ({ action, result }) => {
-  if (action.tool === 'protocol_complete') return null;
-
-  return (
-    <div className="mt-2 p-2 bg-black bg-opacity-30 rounded text-xs font-mono">
-      {action.tool === 'execute_command' && (
-        <div>
-          <div className="text-yellow-300">$ {action.parameters.command}</div>
-          {result && (
-            <div className={result.stderr ? 'text-red-300' : 'text-green-300'}>
-              {result.stdout || result.stderr || 'No output'}
-            </div>
-          )}
-        </div>
-      )}
-
-      {action.tool === 'update_file' && (
-        <div>
-          <div className="text-blue-300">✏️ {action.parameters.file}</div>
-          {result && (
-            <div className={result.success ? 'text-green-300' : 'text-red-300'}>
-              {result.success ? 'File updated' : result.error}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Thinking Indicator Component
-const ThinkingIndicator: React.FC = () => (
-  <div className="flex justify-start">
-    <div className="bg-gray-700 text-gray-100 p-3 rounded-lg max-w-[80%]">
-      <div className="flex items-center">
-        <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center mr-2">
-          <span className="text-xs font-bold text-white">Z</span>
-        </div>
-        <span className="font-semibold text-blue-400 mr-2">qZET</span>
-        <div className="flex space-x-1">
-          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-        </div>
-      </div>
-      <div className="text-sm text-gray-300 mt-1">Думаю...</div>
-    </div>
-  </div>
-); 
+export default AIChat; 

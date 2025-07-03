@@ -1,399 +1,597 @@
-# PowerShell версия для Windows
-# 🐳 ZeroEnhanced Docker Setup Script
+# ZetGui Docker Setup Manager  
+# Настройка и управление Docker контейнером для безопасного выполнения команд
 
-Write-Host "🐳 ZeroEnhanced Docker Setup для Windows" -ForegroundColor Cyan
+param(
+    [string]$Action = "setup",
+    [switch]$Help
+)
 
-# Константы
-$DOCKER_IMAGE_NAME = "zet-sandbox-image"
-$SANDBOX_CONTAINER_NAME = "zet-sandbox"
-$DOCKERFILE_PATH = ".\docker-sandbox\Dockerfile"
-$SANDBOX_DIR = ".\sandbox"
+$ErrorActionPreference = "Stop"
+
+# Функции логирования с символами
+function log_info { param([string]$msg) Write-Host "ℹ  $msg" -ForegroundColor Cyan }
+function log_success { param([string]$msg) Write-Host "✓  $msg" -ForegroundColor Green }
+function log_warning { param([string]$msg) Write-Host "⚠  $msg" -ForegroundColor Yellow }
+function log_error { param([string]$msg) Write-Host "✗  $msg" -ForegroundColor Red }
+function log_step { param([string]$msg) Write-Host "*  $msg" -ForegroundColor Purple }
+
+# Анимация загрузки
+function Show-Loading {
+    param([string]$message, [int]$duration = 2)
+    $chars = @("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+    
+    for ($i = 0; $i -lt ($duration * 10); $i++) {
+        $char = $chars[$i % $chars.Length]
+        Write-Host "`r$char  $message" -NoNewline -ForegroundColor Cyan
+        Start-Sleep -Milliseconds 100
+    }
+    Write-Host "`r✓  $message" -ForegroundColor Green
+}
+
+# Красивый логотип
+function Show-Logo {
+    Clear-Host
+    Write-Host "██████╗ ███████╗████████╗     ██████╗ ██╗   ██╗██╗" -ForegroundColor Cyan
+    Write-Host "╚════██╗██╔════╝╚══██╔══╝    ██╔════╝ ██║   ██║██║" -ForegroundColor Cyan  
+    Write-Host " █████╔╝█████╗     ██║       ██║  ███╗██║   ██║██║" -ForegroundColor Cyan
+    Write-Host "██╔═══╝ ██╔══╝     ██║       ██║   ██║██║   ██║██║" -ForegroundColor Cyan
+    Write-Host "███████╗███████╗   ██║       ╚██████╔╝╚██████╔╝██║" -ForegroundColor Cyan
+    Write-Host "╚══════╝╚══════╝   ╚═╝        ╚═════╝  ╚═════╝ ╚═╝" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Docker Setup Manager" -ForegroundColor Blue
+    Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Blue
+    Write-Host ""
+}
 
 # Переходим в корневую директорию проекта
 $scriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location (Join-Path $scriptPath "..")
 
-# Функции для проверки Docker
-function Test-Docker {
-    try {
-        if (Get-Command docker -ErrorAction SilentlyContinue) {
-            $null = docker ps 2>$null
-            return $true
-        }
-    } catch {
-        return $false
-    }
-    return $false
-}
+# Константы
+$IMAGE_NAME = "zet-sandbox-image:latest"
+$CONTAINER_NAME = "zet-sandbox"
+$SANDBOX_DIR = ".\sandbox"
+$DOCKERFILE_PATH = ".\docker-sandbox\Dockerfile"
 
-function Test-DockerDesktop {
-    try {
-        $dockerProcess = Get-Process "Docker Desktop" -ErrorAction SilentlyContinue
-        return ($dockerProcess -ne $null)
-    } catch {
-        return $false
+# Автоопределение системы
+function Get-SystemInfo {
+    log_step "Определение системы..."
+    
+    $systemInfo = @{
+        Type = "windows"
+        OS = [Environment]::OSVersion.VersionString
+        Arch = $env:PROCESSOR_ARCHITECTURE
+        Version = [Environment]::OSVersion.Version
+        User = $env:USERNAME
+        Computer = $env:COMPUTERNAME
     }
-}
-
-function Test-ImageExists {
-    try {
-        $null = docker image inspect "$DOCKER_IMAGE_NAME`:latest" 2>$null
-        return $true
-    } catch {
-        return $false
+    
+    # Определение Docker архитектуры
+    switch ($systemInfo.Arch) {
+        "AMD64" { $systemInfo.DockerArch = "amd64" }
+        "ARM64" { $systemInfo.DockerArch = "arm64" }
+        default { $systemInfo.DockerArch = "amd64" }
     }
-}
-
-function Test-ContainerExists {
-    try {
-        $null = docker container inspect $SANDBOX_CONTAINER_NAME 2>$null
-        return $true
-    } catch {
-        return $false
-    }
-}
-
-function Test-ContainerRunning {
-    try {
-        $status = docker inspect -f '{{.State.Running}}' $SANDBOX_CONTAINER_NAME 2>$null
-        return ($status -eq "true")
-    } catch {
-        return $false
-    }
+    
+    log_info "Система: $($systemInfo.Type)"
+    log_info "ОС: $($systemInfo.OS)"
+    log_info "Архитектура: $($systemInfo.Arch) -> Docker: $($systemInfo.DockerArch)"
+    log_info "Пользователь: $($systemInfo.User)"
+    
+    return $systemInfo
 }
 
 # Проверка Docker
-function Check-Docker {
-    Write-Host "🔍 Проверка Docker..." -ForegroundColor Purple
+function Test-Docker {
+    log_step "Проверка Docker..."
     
-    if (-not (Test-Docker)) {
-        Write-Host "❌ Docker не установлен или не запущен!" -ForegroundColor Red
-        Write-Host "💡 Установите Docker Desktop:" -ForegroundColor Yellow
-        Write-Host "   .\script\install-system-packages.ps1" -ForegroundColor White
-        exit 1
+    # Проверка установки Docker
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+        log_error "Docker не установлен!"
+        log_info "Установите Docker Desktop для Windows:"
+        log_info "https://docs.docker.com/desktop/windows/install/"
+        return $false
     }
     
-    Write-Host "✅ Docker готов к работе" -ForegroundColor Green
+    # Проверка Docker daemon
+    try {
+        $null = docker info 2>$null
+    } catch {
+        log_error "Docker daemon не запущен!"
+        log_info "Запустите Docker Desktop"
+        return $false
+    }
+    
+    # Проверка доступа к Docker
+    try {
+        $null = docker ps 2>$null
+        $dockerVersion = (docker --version).Split(' ')[2].TrimEnd(',')
+        log_success "Docker работает: $dockerVersion"
+        return $true
+    } catch {
+        log_error "Нет доступа к Docker!"
+        log_info "Убедитесь что Docker Desktop запущен и доступен"
+        return $false
+    }
 }
 
 # Создание sandbox директории
-function Create-SandboxDir {
-    Write-Host "📁 Создание sandbox директории..." -ForegroundColor Purple
+function New-SandboxDirectory {
+    log_step "Создание sandbox директории..."
     
     if (-not (Test-Path $SANDBOX_DIR)) {
-        New-Item -ItemType Directory -Path $SANDBOX_DIR | Out-Null
-        Write-Host "✅ Директория $SANDBOX_DIR создана" -ForegroundColor Green
+        New-Item -ItemType Directory -Path $SANDBOX_DIR -Force | Out-Null
+        log_success "Создана директория: $SANDBOX_DIR"
     } else {
-        Write-Host "ℹ️ Директория $SANDBOX_DIR уже существует" -ForegroundColor Cyan
+        log_success "Директория уже существует: $SANDBOX_DIR"
     }
     
-    # Создаем тестовый файл
-    $readmePath = Join-Path $SANDBOX_DIR "README.md"
-    if (-not (Test-Path $readmePath)) {
-        $readmeContent = @"
-# ZetGui Sandbox
-
-Эта директория монтируется в Docker контейнер как /workspace.
-
-Здесь вы можете:
-- Создавать и редактировать файлы через AI
-- Выполнять команды в безопасной среде  
-- Тестировать код без риска для основной системы
-
-## Структура
-
-sandbox/
-├── README.md     # Этот файл
-├── projects/     # Ваши проекты
-└── temp/         # Временные файлы
-
-Все файлы здесь доступны в контейнере по пути /workspace/.
-"@
-        Set-Content -Path $readmePath -Value $readmeContent -Encoding UTF8
+    # Создаем базовые поддиректории
+    $subDirs = @("workspace", "projects", "temp", "logs")
+    foreach ($dir in $subDirs) {
+        $fullPath = Join-Path $SANDBOX_DIR $dir
+        if (-not (Test-Path $fullPath)) {
+            New-Item -ItemType Directory -Path $fullPath -Force | Out-Null
+        }
         
-        New-Item -ItemType Directory -Path (Join-Path $SANDBOX_DIR "projects") -Force | Out-Null
-        New-Item -ItemType Directory -Path (Join-Path $SANDBOX_DIR "temp") -Force | Out-Null
+        # Создаем .gitkeep файлы
+        $gitkeepPath = Join-Path $fullPath ".gitkeep"
+        if (-not (Test-Path $gitkeepPath)) {
+            "" | Out-File -FilePath $gitkeepPath -Encoding UTF8
+        }
+    }
+    
+    # Проверка прав доступа
+    try {
+        $testFile = Join-Path $SANDBOX_DIR "test.tmp"
+        "test" | Out-File -FilePath $testFile -Encoding UTF8
+        Remove-Item $testFile -Force
+        log_success "Sandbox структура готова"
+        return $true
+    } catch {
+        log_error "Нет прав записи в $SANDBOX_DIR"
+        return $false
+    }
+}
+
+# Создание Dockerfile если не существует
+function New-Dockerfile {
+    log_step "Проверка Dockerfile..."
+    
+    if (-not (Test-Path $DOCKERFILE_PATH)) {
+        log_info "Создаю Dockerfile..."
         
-        Write-Host "✅ Создан базовый README и структура директорий" -ForegroundColor Green
+        $dockerDir = Split-Path $DOCKERFILE_PATH -Parent
+        if (-not (Test-Path $dockerDir)) {
+            New-Item -ItemType Directory -Path $dockerDir -Force | Out-Null
+        }
+        
+        $dockerfileContent = @'
+# ZetGui Sandbox Container
+# Безопасная среда выполнения для AI команд
+
+FROM ubuntu:22.04
+
+# Переменные окружения
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NODE_VERSION=20
+ENV PYTHON_VERSION=3.11
+
+# Установка базовых пакетов
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    git \
+    nano \
+    vim \
+    htop \
+    tree \
+    jq \
+    unzip \
+    zip \
+    build-essential \
+    python3 \
+    python3-pip \
+    python3-venv \
+    nodejs \
+    npm \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    software-properties-common \
+    && rm -rf /var/lib/apt/lists/*
+
+# Установка Node.js LTS
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
+    && apt-get install -y nodejs
+
+# Обновление npm
+RUN npm install -g npm@latest
+
+# Установка полезных npm пакетов
+RUN npm install -g \
+    typescript \
+    ts-node \
+    nodemon \
+    prettier \
+    eslint
+
+# Установка Python пакетов
+RUN pip3 install --upgrade pip setuptools wheel \
+    && pip3 install \
+    requests \
+    beautifulsoup4 \
+    pandas \
+    numpy \
+    flask \
+    fastapi \
+    uvicorn
+
+# Создание рабочего пользователя
+RUN useradd -m -s /bin/bash zetuser \
+    && echo "zetuser:zetpass" | chpasswd \
+    && usermod -aG sudo zetuser
+
+# Создание рабочих директорий
+RUN mkdir -p /workspace /projects /tmp/zet \
+    && chown -R zetuser:zetuser /workspace /projects /tmp/zet
+
+# Настройка sudo без пароля для zetuser
+RUN echo "zetuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Переключение на рабочего пользователя
+USER zetuser
+WORKDIR /workspace
+
+# Настройка bash
+RUN echo 'export PS1="\[\033[36m\]zet-sandbox\[\033[0m\]:\[\033[32m\]\w\[\033[0m\]$ "' >> ~/.bashrc \
+    && echo 'alias ll="ls -la"' >> ~/.bashrc \
+    && echo 'alias la="ls -la"' >> ~/.bashrc
+
+# Создание информационного файла
+RUN echo "ZetGui Sandbox Container" > ~/README.txt \
+    && echo "======================" >> ~/README.txt \
+    && echo "Node.js: $(node --version)" >> ~/README.txt \
+    && echo "npm: $(npm --version)" >> ~/README.txt \
+    && echo "Python: $(python3 --version)" >> ~/README.txt \
+    && echo "Build: $(date)" >> ~/README.txt
+
+# Порты для веб-приложений
+EXPOSE 3000 8000 8080 5000
+
+# Команда по умолчанию
+CMD ["/bin/bash"]
+'@
+        
+        $dockerfileContent | Out-File -FilePath $DOCKERFILE_PATH -Encoding UTF8
+        log_success "Dockerfile создан: $DOCKERFILE_PATH"
+    } else {
+        log_success "Dockerfile уже существует: $DOCKERFILE_PATH"
     }
 }
 
 # Сборка Docker образа
 function Build-DockerImage {
-    Write-Host "🔨 Сборка Docker образа..." -ForegroundColor Purple
+    param($SystemInfo)
     
-    if (-not (Test-Path $DOCKERFILE_PATH)) {
-        Write-Host "❌ Dockerfile не найден: $DOCKERFILE_PATH" -ForegroundColor Red
-        exit 1
-    }
+    log_step "Сборка Docker образа..."
     
-    Write-Host "📦 Собираю образ $DOCKER_IMAGE_NAME`:latest..." -ForegroundColor Yellow
-    
+    # Удаляем старый образ если существует
     try {
-        docker build -t "$DOCKER_IMAGE_NAME`:latest" -f $DOCKERFILE_PATH "./docker-sandbox/" --no-cache
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Образ собран успешно" -ForegroundColor Green
-        } else {
-            throw "Docker build failed"
-        }
+        docker image inspect $IMAGE_NAME *>$null
+        log_info "Удаляю старый образ..."
+        docker rmi $IMAGE_NAME *>$null
     } catch {
-        Write-Host "❌ Ошибка сборки Docker образа" -ForegroundColor Red
-        exit 1
-    }
-}
-
-# Создание контейнера
-function Create-Container {
-    Write-Host "🐳 Создание Docker контейнера..." -ForegroundColor Purple
-    
-    # Останавливаем и удаляем существующий контейнер если есть
-    if (Test-ContainerExists) {
-        Write-Host "ℹ️ Останавливаю существующий контейнер..." -ForegroundColor Cyan
-        docker stop $SANDBOX_CONTAINER_NAME 2>$null | Out-Null
-        docker rm $SANDBOX_CONTAINER_NAME 2>$null | Out-Null
+        # Образ не существует, продолжаем
     }
     
-    # Создаем новый контейнер
-    Write-Host "ℹ️ Создаю новый контейнер $SANDBOX_CONTAINER_NAME..." -ForegroundColor Cyan
+    log_info "Собираю образ: $IMAGE_NAME"
+    log_info "Архитектура: $($SystemInfo.DockerArch)"
     
-    $absoluteSandboxPath = (Resolve-Path $SANDBOX_DIR).Path
+    $dockerDir = Split-Path $DOCKERFILE_PATH -Parent
     
     try {
-        $volumeMount = "${absoluteSandboxPath}:/workspace"
-        docker create --name $SANDBOX_CONTAINER_NAME --tty --interactive --workdir "/workspace" --volume $volumeMount "$DOCKER_IMAGE_NAME`:latest" /bin/bash
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Контейнер $SANDBOX_CONTAINER_NAME создан" -ForegroundColor Green
-        } else {
-            throw "Container creation failed"
-        }
-    } catch {
-        Write-Host "❌ Ошибка создания контейнера" -ForegroundColor Red
-        exit 1
-    }
-}
-
-# Запуск контейнера
-function Start-Container {
-    Write-Host "🚀 Запуск контейнера..." -ForegroundColor Purple
-    
-    if (Test-ContainerRunning) {
-        Write-Host "ℹ️ Контейнер уже запущен" -ForegroundColor Cyan
-        return
-    }
-    
-    try {
-        docker start $SANDBOX_CONTAINER_NAME
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Контейнер запущен" -ForegroundColor Green
-        } else {
-            throw "Container start failed"
-        }
-    } catch {
-        Write-Host "❌ Ошибка запуска контейнера" -ForegroundColor Red
-        exit 1
-    }
-}
-
-# Тестирование контейнера
-function Test-Container {
-    Write-Host "🧪 Тестирование контейнера..." -ForegroundColor Purple
-    
-    # Тест 1: Проверка что контейнер запущен
-    if (-not (Test-ContainerRunning)) {
-        Write-Host "❌ Контейнер не запущен" -ForegroundColor Red
-        return $false
-    }
-    
-    # Тест 2: Выполнение простой команды
-    Write-Host "ℹ️ Выполняю тестовую команду..." -ForegroundColor Cyan
-    try {
-        $result = docker exec $SANDBOX_CONTAINER_NAME echo "Hello from ZetGui sandbox!" 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Тестовая команда выполнена успешно" -ForegroundColor Green
-        } else {
-            Write-Host "❌ Ошибка выполнения команды в контейнере" -ForegroundColor Red
-            return $false
-        }
-    } catch {
-        Write-Host "❌ Ошибка выполнения команды в контейнере" -ForegroundColor Red
-        return $false
-    }
-    
-    # Тест 3: Проверка монтирования директории
-    Write-Host "ℹ️ Проверяю монтирование sandbox директории..." -ForegroundColor Cyan
-    try {
-        $result = docker exec $SANDBOX_CONTAINER_NAME ls -la /workspace/README.md 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "✅ Sandbox директория смонтирована корректно" -ForegroundColor Green
-        } else {
-            Write-Host "❌ Проблема с монтированием sandbox директории" -ForegroundColor Red
-            return $false
-        }
-    } catch {
-        Write-Host "❌ Проблема с монтированием sandbox директории" -ForegroundColor Red
-        return $false
-    }
-    
-    # Тест 4: Проверка установленных пакетов
-    Write-Host "ℹ️ Проверяю установленные пакеты в контейнере..." -ForegroundColor Cyan
-    try {
-        $curlCheck = docker exec $SANDBOX_CONTAINER_NAME which curl 2>$null
-        $gitCheck = docker exec $SANDBOX_CONTAINER_NAME which git 2>$null
-        $nanoCheck = docker exec $SANDBOX_CONTAINER_NAME which nano 2>$null
+        # Сборка с параметрами для текущей архитектуры
+        docker build `
+            --platform "linux/$($SystemInfo.DockerArch)" `
+            --tag $IMAGE_NAME `
+            --file $DOCKERFILE_PATH `
+            $dockerDir `
+            --progress=plain
         
-        if ($curlCheck -and $gitCheck -and $nanoCheck) {
-            Write-Host "✅ Все необходимые пакеты установлены" -ForegroundColor Green
-        } else {
-            Write-Host "⚠️ Некоторые пакеты могут отсутствовать в контейнере" -ForegroundColor Yellow
-        }
+        log_success "Образ собран успешно: $IMAGE_NAME"
+        
+        # Показываем информацию об образе
+        $imageInfo = docker images $IMAGE_NAME --format "{{.Size}}"
+        log_info "Размер образа: $imageInfo"
+        
+        return $true
     } catch {
-        Write-Host "⚠️ Некоторые пакеты могут отсутствовать в контейнере" -ForegroundColor Yellow
+        log_error "Ошибка сборки образа: $_"
+        return $false
+    }
+}
+
+# Создание и настройка контейнера
+function New-Container {
+    log_step "Настройка контейнера..."
+    
+    # Останавливаем и удаляем существующий контейнер
+    try {
+        docker container inspect $CONTAINER_NAME *>$null
+        log_info "Останавливаю существующий контейнер..."
+        docker stop $CONTAINER_NAME *>$null
+        docker rm $CONTAINER_NAME *>$null
+    } catch {
+        # Контейнер не существует, продолжаем
     }
     
-    Write-Host "✅ Все тесты пройдены успешно!" -ForegroundColor Green
+    # Получаем абсолютный путь к sandbox
+    $sandboxAbsPath = (Resolve-Path $SANDBOX_DIR).Path
+    
+    log_info "Создаю контейнер: $CONTAINER_NAME"
+    log_info "Монтирую: $sandboxAbsPath -> /workspace"
+    
+    try {
+        # Создание контейнера с настройками
+        docker create `
+            --name $CONTAINER_NAME `
+            --hostname "zet-sandbox" `
+            --volume "${sandboxAbsPath}:/workspace" `
+            --workdir "/workspace" `
+            --interactive `
+            --tty `
+            --restart unless-stopped `
+            --memory="2g" `
+            --cpus="2.0" `
+            --network bridge `
+            --publish 3000:3000 `
+            --publish 8000:8000 `
+            --publish 8080:8080 `
+            --publish 5000:5000 `
+            $IMAGE_NAME
+        
+        log_success "Контейнер создан: $CONTAINER_NAME"
+        
+        # Запускаем контейнер
+        docker start $CONTAINER_NAME
+        log_success "Контейнер запущен"
+        
+        # Ждем пока контейнер полностью запустится
+        Start-Sleep -Seconds 2
+        
+        # Проверяем статус
+        $status = docker inspect -f '{{.State.Status}}' $CONTAINER_NAME
+        log_info "Статус контейнера: $status"
+        
+        return $true
+    } catch {
+        log_error "Не удалось создать/запустить контейнер: $_"
+        return $false
+    }
+}
+
+# Тест контейнера
+function Test-Container {
+    log_step "Тестирование контейнера..."
+    
+    # Проверка работы контейнера
+    try {
+        docker exec $CONTAINER_NAME echo "Container is working" *>$null
+    } catch {
+        log_error "Контейнер не отвечает"
+        return $false
+    }
+    
+    # Тест основных команд
+    log_info "Тестирую команды в контейнере..."
+    
+    # Node.js
+    try {
+        $nodeVersion = docker exec $CONTAINER_NAME node --version 2>$null
+        log_success "Node.js: $nodeVersion"
+    } catch {
+        log_error "Node.js не работает в контейнере"
+        return $false
+    }
+    
+    # Python
+    try {
+        $pythonVersion = docker exec $CONTAINER_NAME python3 --version 2>$null
+        log_success "Python: $pythonVersion"
+    } catch {
+        log_error "Python не работает в контейнере"
+        return $false
+    }
+    
+    # Проверка монтирования
+    try {
+        docker exec $CONTAINER_NAME test -d "/workspace" *>$null
+        docker exec $CONTAINER_NAME test -w "/workspace" *>$null
+        log_success "Workspace монтирован и доступен для записи"
+    } catch {
+        log_error "Проблемы с монтированием workspace"
+        return $false
+    }
+    
+    # Создаем тестовый файл
+    $testFile = "test-$(Get-Date -Format 'yyyyMMddHHmmss').txt"
+    try {
+        docker exec $CONTAINER_NAME sh -c "echo 'Container test' > /workspace/$testFile"
+        if (Test-Path (Join-Path $SANDBOX_DIR $testFile)) {
+            Remove-Item (Join-Path $SANDBOX_DIR $testFile) -Force
+            log_success "Файловая система работает корректно"
+        } else {
+            log_error "Проблемы с файловой системой"
+            return $false
+        }
+    } catch {
+        log_error "Проблемы с файловой системой: $_"
+        return $false
+    }
+    
+    log_success "Все тесты пройдены!"
     return $true
 }
 
 # Показать информацию о контейнере
 function Show-ContainerInfo {
-    Write-Host "📊 Информация о контейнере..." -ForegroundColor Purple
+    log_step "Информация о контейнере..."
     
-    Write-Host "📊 Статус Docker окружения:" -ForegroundColor Cyan
-    Write-Host "  • Образ:     $DOCKER_IMAGE_NAME`:latest" -ForegroundColor Blue
-    Write-Host "  • Контейнер: $SANDBOX_CONTAINER_NAME" -ForegroundColor Blue
-    Write-Host "  • Sandbox:   $SANDBOX_DIR → /workspace" -ForegroundColor Blue
+    Write-Host ""
+    Write-Host "📦 Контейнер:" -ForegroundColor Cyan
+    Write-Host "   • Имя: $CONTAINER_NAME" -ForegroundColor Blue
+    Write-Host "   • Образ: $IMAGE_NAME" -ForegroundColor Blue
+    Write-Host "   • Sandbox: $SANDBOX_DIR" -ForegroundColor Blue
     
-    if (Test-ImageExists) {
-        Write-Host "  ✅ Образ существует" -ForegroundColor Green
-    } else {
-        Write-Host "  ❌ Образ не найден" -ForegroundColor Red
+    try {
+        docker container inspect $CONTAINER_NAME *>$null
+        $status = docker inspect -f '{{.State.Status}}' $CONTAINER_NAME
+        $created = (docker inspect -f '{{.Created}}' $CONTAINER_NAME).Split('T')[0]
+        Write-Host "   • Статус: $status" -ForegroundColor Blue
+        Write-Host "   • Создан: $created" -ForegroundColor Blue
+        
+        Write-Host ""
+        Write-Host "🔗 Команды:" -ForegroundColor Cyan
+        Write-Host "   • Войти в контейнер: docker exec -it $CONTAINER_NAME bash" -ForegroundColor Blue
+        Write-Host "   • Остановить: docker stop $CONTAINER_NAME" -ForegroundColor Blue
+        Write-Host "   • Запустить: docker start $CONTAINER_NAME" -ForegroundColor Blue
+        Write-Host "   • Логи: docker logs $CONTAINER_NAME" -ForegroundColor Blue
+        
+        Write-Host ""
+        Write-Host "🌐 Порты:" -ForegroundColor Cyan
+        Write-Host "   • 3000 -> 3000 (React/Node.js)" -ForegroundColor Blue
+        Write-Host "   • 8000 -> 8000 (Python/FastAPI)" -ForegroundColor Blue
+        Write-Host "   • 8080 -> 8080 (Web servers)" -ForegroundColor Blue
+        Write-Host "   • 5000 -> 5000 (Flask)" -ForegroundColor Blue
+    } catch {
+        Write-Host "   • Контейнер не создан" -ForegroundColor Red
     }
-    
-    if (Test-ContainerExists) {
-        if (Test-ContainerRunning) {
-            Write-Host "  ✅ Контейнер запущен" -ForegroundColor Green
-        } else {
-            Write-Host "  ⚠️ Контейнер остановлен" -ForegroundColor Yellow
-        }
-    } else {
-        Write-Host "  ❌ Контейнер не создан" -ForegroundColor Red
-    }
+    Write-Host ""
 }
 
-# Очистка
+# Очистка (удаление контейнера и образа)
 function Remove-DockerResources {
-    Write-Host "🗑️ Очистка Docker ресурсов..." -ForegroundColor Purple
+    log_step "Очистка Docker ресурсов..."
     
     # Останавливаем и удаляем контейнер
-    if (Test-ContainerExists) {
-        Write-Host "ℹ️ Удаляю контейнер $SANDBOX_CONTAINER_NAME..." -ForegroundColor Cyan
-        docker stop $SANDBOX_CONTAINER_NAME 2>$null | Out-Null
-        docker rm $SANDBOX_CONTAINER_NAME 2>$null | Out-Null
-        Write-Host "✅ Контейнер удален" -ForegroundColor Green
+    try {
+        docker container inspect $CONTAINER_NAME *>$null
+        log_info "Удаляю контейнер: $CONTAINER_NAME"
+        docker stop $CONTAINER_NAME *>$null
+        docker rm $CONTAINER_NAME *>$null
+        log_success "Контейнер удален"
+    } catch {
+        # Контейнер не существует
     }
     
     # Удаляем образ
-    if (Test-ImageExists) {
-        Write-Host "ℹ️ Удаляю образ $DOCKER_IMAGE_NAME`:latest..." -ForegroundColor Cyan
-        docker rmi "$DOCKER_IMAGE_NAME`:latest" 2>$null | Out-Null
-        Write-Host "✅ Образ удален" -ForegroundColor Green
+    try {
+        docker image inspect $IMAGE_NAME *>$null
+        log_info "Удаляю образ: $IMAGE_NAME"
+        docker rmi $IMAGE_NAME *>$null
+        log_success "Образ удален"
+    } catch {
+        # Образ не существует
     }
     
-    Write-Host "✅ Очистка завершена" -ForegroundColor Green
-}
-
-# Полная настройка
-function Invoke-FullSetup {
-    param([string]$Mode = "")
-    
-    Write-Host "🎯 Полная настройка Docker окружения" -ForegroundColor Purple
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
-    
-    Check-Docker
-    Create-SandboxDir
-    
-    # Сборка образа
-    if (-not (Test-ImageExists) -or $Mode -eq "--rebuild") {
-        Build-DockerImage
-    } else {
-        Write-Host "ℹ️ Образ $DOCKER_IMAGE_NAME`:latest уже существует" -ForegroundColor Cyan
-    }
-    
-    # Создание контейнера
-    if (-not (Test-ContainerExists)) {
-        Create-Container
-    } else {
-        Write-Host "ℹ️ Контейнер $SANDBOX_CONTAINER_NAME уже существует" -ForegroundColor Cyan
-    }
-    
-    Start-Container
-    
-    if (Test-Container) {
-        Write-Host ""
-        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
-        Write-Host "🎉 Docker окружение готово к работе!" -ForegroundColor Green
-        Show-ContainerInfo
-        Write-Host ""
-        Write-Host "📋 Команды для управления:" -ForegroundColor Cyan
-        Write-Host "   Проверка статуса: .\script\setup-docker.ps1 --status" -ForegroundColor White
-        Write-Host "   Перезапуск:       .\script\setup-docker.ps1 --restart" -ForegroundColor White
-        Write-Host "   Очистка:          .\script\setup-docker.ps1 --cleanup" -ForegroundColor White
-        Write-Host ""
-    } else {
-        Write-Host "❌ Настройка завершилась с ошибками" -ForegroundColor Red
-        exit 1
-    }
+    log_success "Очистка завершена"
 }
 
 # Основная функция
 function Main {
-    param([string]$Command = "setup")
+    $systemInfo = Get-SystemInfo
+    Write-Host ""
     
-    switch ($Command) {
-        "setup" { Invoke-FullSetup }
-        "--setup" { Invoke-FullSetup }
-        "--rebuild" { Invoke-FullSetup "--rebuild" }
-        "--status" { Show-ContainerInfo }
-        "--start" { 
-            Check-Docker
-            Start-Container 
-        }
-        "--restart" {
-            Check-Docker
-            if (Test-ContainerExists) {
-                docker restart $SANDBOX_CONTAINER_NAME
-                Write-Host "✅ Контейнер перезапущен" -ForegroundColor Green
+    switch ($Action) {
+        "setup" {
+            Write-Host ""
+            log_step "🎯 ZeroEnhanced Docker Container Setup"
+            Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
+            Write-Host ""
+            
+            if (-not (Test-Docker)) {
+                log_error "Docker не готов к работе"
+                exit 1
+            }
+            Write-Host ""
+            
+            if (-not (New-SandboxDirectory)) {
+                log_error "Не удалось создать sandbox директорию"
+                exit 1
+            }
+            Write-Host ""
+            
+            New-Dockerfile
+            Write-Host ""
+            
+            if (Build-DockerImage $systemInfo) {
+                Write-Host ""
+                if (New-Container) {
+                    Write-Host ""
+                    if (Test-Container) {
+                        Write-Host ""
+                        Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
+                        log_success "🎉 Docker контейнер настроен и готов к работе!"
+                        Show-ContainerInfo
+                    } else {
+                        log_error "Тесты контейнера провалились"
+                        exit 1
+                    }
+                } else {
+                    log_error "Не удалось настроить контейнер"
+                    exit 1
+                }
             } else {
-                Write-Host "❌ Контейнер не существует" -ForegroundColor Red
+                log_error "Не удалось собрать образ"
                 exit 1
             }
         }
-        "--test" {
-            Check-Docker
-            Test-Container
+        "info" {
+            $systemInfo = Get-SystemInfo
+            Show-ContainerInfo
         }
-        "--cleanup" { Remove-DockerResources }
-        "--help" {
-            Write-Host "🐳 ZeroEnhanced Docker Setup"
-            Write-Host "Использование: .\script\setup-docker.ps1 [команда]"
+        "test" {
+            if (-not (Test-Container)) {
+                exit 1
+            }
+        }
+        "cleanup" {
+            Remove-DockerResources
+        }
+        "rebuild" {
+            log_step "Пересборка контейнера..."
+            Remove-DockerResources
             Write-Host ""
-            Write-Host "Команды:"
-            Write-Host "  setup     - Полная настройка (по умолчанию)"
-            Write-Host "  --rebuild - Пересборка образа и контейнера"
-            Write-Host "  --status  - Показать статус"
-            Write-Host "  --start   - Запустить контейнер"
-            Write-Host "  --restart - Перезапустить контейнер"
-            Write-Host "  --test    - Протестировать контейнер"
-            Write-Host "  --cleanup - Удалить контейнер и образ"
-            Write-Host "  --help    - Показать эту справку"
+            $Action = "setup"
+            Main
         }
         default {
-            Write-Host "❌ Неизвестная команда: $Command" -ForegroundColor Red
-            Write-Host "Используйте --help для справки" -ForegroundColor Yellow
+            log_error "Неизвестная команда: $Action"
+            Write-Host "Используйте -Help для справки"
             exit 1
         }
     }
 }
 
+# Справка
+if ($Help) {
+    Write-Host "🐳 ZeroEnhanced Docker Container Setup"
+    Write-Host "Использование: .\setup-docker.ps1 [-Action команда] [-Help]"
+    Write-Host ""
+    Write-Host "Команды:"
+    Write-Host "  setup     - Полная настройка контейнера (по умолчанию)"
+    Write-Host "  info      - Информация о контейнере"
+    Write-Host "  test      - Тестирование контейнера"
+    Write-Host "  cleanup   - Удаление контейнера и образа"
+    Write-Host "  rebuild   - Пересборка контейнера с нуля"
+    Write-Host ""
+    Write-Host "Примеры:"
+    Write-Host "  .\setup-docker.ps1"
+    Write-Host "  .\setup-docker.ps1 -Action info"
+    Write-Host "  .\setup-docker.ps1 -Action rebuild"
+    exit 0
+}
+
 # Запуск
-Main @args 
+Main 

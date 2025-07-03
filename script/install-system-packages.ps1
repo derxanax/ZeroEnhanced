@@ -1,17 +1,45 @@
-# PowerShell версия для Windows
-# 🚀 ZeroEnhanced System Dependencies Installer
+# ZetGui System Dependencies Installer
+# Установка системных зависимостей для Windows
 
-Write-Host @"
-██████╗ ███████╗████████╗     ██████╗ ██╗   ██╗██╗
-╚════██╗██╔════╝╚══██╔══╝    ██╔════╝ ██║   ██║██║
- █████╔╝█████╗     ██║       ██║  ███╗██║   ██║██║
-██╔═══╝ ██╔══╝     ██║       ██║   ██║██║   ██║██║
-███████╗███████╗   ██║       ╚██████╔╝╚██████╔╝██║
-╚══════╝╚══════╝   ╚═╝        ╚═════╝  ╚═════╝ ╚═╝
-"@ -ForegroundColor Cyan
+$ErrorActionPreference = "Stop"
 
-Write-Host "🚀 ZeroEnhanced System Dependencies Installation для Windows" -ForegroundColor Green
-Write-Host "================================================================" -ForegroundColor Green
+# Функции логирования с символами  
+function log_info { param([string]$msg) Write-Host "ℹ  $msg" -ForegroundColor Cyan }
+function log_success { param([string]$msg) Write-Host "✓  $msg" -ForegroundColor Green }
+function log_warning { param([string]$msg) Write-Host "⚠  $msg" -ForegroundColor Yellow }
+function log_error { param([string]$msg) Write-Host "✗  $msg" -ForegroundColor Red }
+function log_step { param([string]$msg) Write-Host "*  $msg" -ForegroundColor Purple }
+
+# Анимация загрузки
+function Show-Loading {
+    param([string]$message, [int]$duration = 2)
+    $chars = @("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+    
+    for ($i = 0; $i -lt ($duration * 10); $i++) {
+        $char = $chars[$i % $chars.Length]
+        Write-Host "`r$char  $message" -NoNewline -ForegroundColor Cyan
+        Start-Sleep -Milliseconds 100
+    }
+    Write-Host "`r✓  $message" -ForegroundColor Green
+}
+
+# Красивый логотип
+function Show-Logo {
+    Clear-Host
+    Write-Host "██████╗ ███████╗████████╗     ██████╗ ██╗   ██╗██╗" -ForegroundColor Cyan
+    Write-Host "╚════██╗██╔════╝╚══██╔══╝    ██╔════╝ ██║   ██║██║" -ForegroundColor Cyan  
+    Write-Host " █████╔╝█████╗     ██║       ██║  ███╗██║   ██║██║" -ForegroundColor Cyan
+    Write-Host "██╔═══╝ ██╔══╝     ██║       ██║   ██║██║   ██║██║" -ForegroundColor Cyan
+    Write-Host "███████╗███████╗   ██║       ╚██████╔╝╚██████╔╝██║" -ForegroundColor Cyan
+    Write-Host "╚══════╝╚══════╝   ╚═╝        ╚═════╝  ╚═════╝ ╚═╝" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "System Dependencies Installer" -ForegroundColor Blue
+    Write-Host "═══════════════════════════════════════════════════" -ForegroundColor Blue
+    Write-Host ""
+}
+
+Show-Logo
+log_step "ZetGui System Dependencies Installation для Windows"
 
 # Функции для проверки установленных пакетов
 function Check-Installed {

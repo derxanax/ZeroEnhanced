@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# 🔍 ZeroEnhanced Dependencies Checker
+# ZetGui Dependencies Checker
 # Helper функции для проверки системных и проектных зависимостей
 
 # Цвета для вывода
@@ -10,18 +10,32 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # Функции для красивого вывода
-log_info() { echo -e "${CYAN}ℹ️  $1${NC}"; }
-log_success() { echo -e "${GREEN}✅ $1${NC}"; }
-log_warning() { echo -e "${YELLOW}⚠️  $1${NC}"; }
-log_error() { echo -e "${RED}❌ $1${NC}"; }
-log_step() { echo -e "${PURPLE}🔥 $1${NC}"; }
+log_info() { echo -e "${CYAN}ℹ  $1${NC}"; }
+log_success() { echo -e "${GREEN}✓  $1${NC}"; }
+log_warning() { echo -e "${YELLOW}⚠  $1${NC}"; }
+log_error() { echo -e "${RED}✗  $1${NC}"; }
+log_step() { echo -e "${PURPLE}*  $1${NC}"; }
+
+# Красивый логотип
+show_logo() {
+    echo -e "${CYAN}"
+    echo "██████╗ ███████╗████████╗     ██████╗ ██╗   ██╗██╗"
+    echo "╚════██╗██╔════╝╚══██╔══╝    ██╔════╝ ██║   ██║██║"
+    echo " █████╔╝█████╗     ██║       ██║  ███╗██║   ██║██║"
+    echo "██╔═══╝ ██╔══╝     ██║       ██║   ██║██║   ██║██║"
+    echo "███████╗███████╗   ██║       ╚██████╔╝╚██████╔╝██║"
+    echo "╚══════╝╚══════╝   ╚═╝        ╚═════╝  ╚═════╝ ╚═╝"
+    echo -e "${NC}"
+    echo -e "${BLUE}ZetGui Dependencies Checker${NC}"
+    echo -e "${BLUE}═══════════════════════════════════════════════════${NC}"
+}
 
 # Проверка системных зависимостей
 check_system_dependencies() {
-    log_step "Проверка системных зависимостей..."
+    log_step "Проверка системных зависимостей"
     
     local all_good=true
     
@@ -31,7 +45,7 @@ check_system_dependencies() {
         local major_version=$(echo $node_version | sed 's/v\([0-9]*\)\..*/\1/')
         
         if [ "$major_version" -ge 18 ]; then
-            log_success "Node.js: $node_version ✓"
+            log_success "Node.js: $node_version"
         else
             log_warning "Node.js: $node_version (рекомендуется v18+)"
             all_good=false
@@ -44,7 +58,7 @@ check_system_dependencies() {
     # npm
     if command -v npm &> /dev/null; then
         local npm_version=$(npm --version)
-        log_success "npm: v$npm_version ✓"
+        log_success "npm: v$npm_version"
     else
         log_error "npm не установлен"
         all_good=false
@@ -53,7 +67,7 @@ check_system_dependencies() {
     # TypeScript
     if command -v tsc &> /dev/null; then
         local tsc_version=$(tsc --version | sed 's/Version //')
-        log_success "TypeScript: $tsc_version ✓"
+        log_success "TypeScript: $tsc_version"
     else
         log_warning "TypeScript не установлен глобально"
         log_info "Установите: npm install -g typescript"
@@ -62,11 +76,10 @@ check_system_dependencies() {
     # Docker
     if command -v docker &> /dev/null; then
         local docker_version=$(docker --version | sed 's/Docker version //' | sed 's/,.*//')
-        log_success "Docker: $docker_version ✓"
+        log_success "Docker: $docker_version"
         
-        # Проверка Docker daemon
         if docker ps &> /dev/null; then
-            log_success "Docker daemon работает ✓"
+            log_success "Docker daemon работает"
         else
             log_error "Docker daemon не запущен"
             log_info "Запустите: sudo systemctl start docker"
@@ -80,7 +93,7 @@ check_system_dependencies() {
     # Git
     if command -v git &> /dev/null; then
         local git_version=$(git --version | sed 's/git version //')
-        log_success "Git: $git_version ✓"
+        log_success "Git: $git_version"
     else
         log_warning "Git не установлен"
     fi
@@ -90,26 +103,24 @@ check_system_dependencies() {
 
 # Проверка Docker окружения
 check_docker_environment() {
-    log_step "Проверка Docker окружения..."
+    log_step "Проверка Docker окружения"
     
     local all_good=true
     local image_name="zet-sandbox-image:latest"
     local container_name="zet-sandbox"
     
-    # Проверка образа
     if docker image inspect "$image_name" &> /dev/null; then
-        log_success "Docker образ $image_name существует ✓"
+        log_success "Docker образ $image_name существует"
     else
         log_warning "Docker образ $image_name не найден"
         log_info "Создайте образ: ./script/setup-docker.sh"
         all_good=false
     fi
     
-    # Проверка контейнера
     if docker container inspect "$container_name" &> /dev/null; then
         local status=$(docker inspect -f '{{.State.Running}}' "$container_name" 2>/dev/null)
         if [ "$status" = "true" ]; then
-            log_success "Docker контейнер $container_name запущен ✓"
+            log_success "Docker контейнер $container_name запущен"
         else
             log_warning "Docker контейнер $container_name остановлен"
             log_info "Запустите: docker start $container_name"
@@ -120,9 +131,8 @@ check_docker_environment() {
         all_good=false
     fi
     
-    # Проверка sandbox директории
     if [ -d "./sandbox" ]; then
-        log_success "Sandbox директория существует ✓"
+        log_success "Sandbox директория существует"
     else
         log_warning "Sandbox директория не найдена"
         log_info "Создайте директорию: ./script/setup-docker.sh"
@@ -134,38 +144,34 @@ check_docker_environment() {
 
 # Проверка npm зависимостей
 check_npm_dependencies() {
-    log_step "Проверка npm зависимостей..."
+    log_step "Проверка npm зависимостей"
     
     local all_good=true
     local current_dir=$(pwd)
     
-    # Переходим в корневую директорию проекта
     cd "$(dirname "$0")/.."
     
-    # Корневые зависимости
     if [ -f "package.json" ]; then
         if [ -d "node_modules" ]; then
-            log_success "Корневые npm зависимости установлены ✓"
+            log_success "Корневые npm зависимости установлены"
         else
             log_warning "Корневые npm зависимости не установлены"
             all_good=false
         fi
     fi
     
-    # Backend зависимости
     if [ -f "backend/package.json" ]; then
         if [ -d "backend/node_modules" ]; then
-            log_success "Backend npm зависимости установлены ✓"
+            log_success "Backend npm зависимости установлены"
         else
             log_warning "Backend npm зависимости не установлены"
             all_good=false
         fi
     fi
     
-    # Desktop React зависимости
     if [ -f "desktop/react-src/package.json" ]; then
         if [ -d "desktop/react-src/node_modules" ]; then
-            log_success "React app npm зависимости установлены ✓"
+            log_success "React app npm зависимости установлены"
         else
             log_warning "React app npm зависимости не установлены"
             all_good=false
@@ -183,7 +189,7 @@ check_npm_dependencies() {
 
 # Проверка портов
 check_ports() {
-    log_step "Проверка портов..."
+    log_step "Проверка портов"
     
     local ports=(3003 8080 3000)
     local conflicts=()
@@ -194,7 +200,7 @@ check_ports() {
             log_warning "Порт $port занят процессом: $process"
             conflicts+=("$port")
         else
-            log_success "Порт $port свободен ✓"
+            log_success "Порт $port свободен"
         fi
     done
     
@@ -208,8 +214,8 @@ check_ports() {
 
 # Полная проверка всех зависимостей
 check_all_dependencies() {
-    log_step "🎯 Полная проверка зависимостей ZeroEnhanced"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    show_logo
+    echo
     
     local system_ok=true
     local docker_ok=true
@@ -239,15 +245,15 @@ check_all_dependencies() {
     fi
     
     echo
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}═══════════════════════════════════════════════════${NC}"
     
     if [ "$system_ok" = true ] && [ "$docker_ok" = true ] && [ "$npm_ok" = true ] && [ "$ports_ok" = true ]; then
-        log_success "🎉 Все зависимости в порядке! ZeroEnhanced готов к запуску."
+        log_success "Все зависимости в порядке! ZetGui готов к запуску"
         return 0
     else
-        log_error "❌ Обнаружены проблемы с зависимостями"
+        log_error "Обнаружены проблемы с зависимостями"
         echo
-        log_info "📋 Рекомендуемые действия:"
+        log_info "Рекомендуемые действия:"
         
         if [ "$system_ok" = false ]; then
             log_info "   1. Установите системные пакеты: ./script/install-system-packages.sh"
@@ -271,13 +277,12 @@ check_all_dependencies() {
 
 # Автоматическое исправление проблем
 auto_fix_dependencies() {
-    log_step "🔧 Автоматическое исправление зависимостей..."
+    log_step "Автоматическое исправление зависимостей"
     
     local script_dir="$(dirname "$0")"
     
-    # Проверяем системные зависимости
     if ! check_system_dependencies &> /dev/null; then
-        log_info "Устанавливаю системные зависимости..."
+        log_info "Устанавливаю системные зависимости"
         if [ -f "$script_dir/install-system-packages.sh" ]; then
             bash "$script_dir/install-system-packages.sh"
         else
@@ -285,9 +290,8 @@ auto_fix_dependencies() {
         fi
     fi
     
-    # Настраиваем Docker
     if ! check_docker_environment &> /dev/null; then
-        log_info "Настраиваю Docker окружение..."
+        log_info "Настраиваю Docker окружение"
         if [ -f "$script_dir/setup-docker.sh" ]; then
             bash "$script_dir/setup-docker.sh"
         else
@@ -295,9 +299,8 @@ auto_fix_dependencies() {
         fi
     fi
     
-    # Устанавливаем npm зависимости
     if ! check_npm_dependencies &> /dev/null; then
-        log_info "Устанавливаю npm зависимости..."
+        log_info "Устанавливаю npm зависимости"
         if [ -f "$script_dir/install-all-Dependencies.sh" ]; then
             bash "$script_dir/install-all-Dependencies.sh"
         else
@@ -310,27 +313,27 @@ auto_fix_dependencies() {
 
 # Показать подробную информацию о системе
 show_system_info() {
-    log_step "📊 Информация о системе..."
+    log_step "Информация о системе"
     
-    echo -e "${CYAN}🖥️  Система:${NC}"
-    echo -e "${BLUE}   • ОС: $(uname -s) $(uname -r)${NC}"
-    echo -e "${BLUE}   • Архитектура: $(uname -m)${NC}"
+    echo -e "${CYAN}Система:${NC}"
+    echo -e "${BLUE}   * ОС: $(uname -s) $(uname -r)${NC}"
+    echo -e "${BLUE}   * Архитектура: $(uname -m)${NC}"
     
     if [ -f /etc/os-release ]; then
         . /etc/os-release
-        echo -e "${BLUE}   • Дистрибутив: $PRETTY_NAME${NC}"
+        echo -e "${BLUE}   * Дистрибутив: $PRETTY_NAME${NC}"
     fi
     
-    echo -e "${CYAN}🔧 Ресурсы:${NC}"
-    echo -e "${BLUE}   • CPU: $(nproc) ядер${NC}"
-    echo -e "${BLUE}   • RAM: $(free -h | awk '/^Mem:/ {print $2}')${NC}"
-    echo -e "${BLUE}   • Диск: $(df -h . | awk 'NR==2 {print $4}') свободно${NC}"
+    echo -e "${CYAN}Ресурсы:${NC}"
+    echo -e "${BLUE}   * CPU: $(nproc) ядер${NC}"
+    echo -e "${BLUE}   * RAM: $(free -h | awk '/^Mem:/ {print $2}')${NC}"
+    echo -e "${BLUE}   * Диск: $(df -h . | awk 'NR==2 {print $4}') свободно${NC}"
     
-    echo -e "${CYAN}📦 Установленные пакеты:${NC}"
-    command -v node &> /dev/null && echo -e "${BLUE}   • Node.js: $(node --version)${NC}"
-    command -v npm &> /dev/null && echo -e "${BLUE}   • npm: v$(npm --version)${NC}"
-    command -v docker &> /dev/null && echo -e "${BLUE}   • Docker: $(docker --version | sed 's/Docker version //' | sed 's/,.*//')${NC}"
-    command -v git &> /dev/null && echo -e "${BLUE}   • Git: $(git --version | sed 's/git version //')${NC}"
+    echo -e "${CYAN}Установленные пакеты:${NC}"
+    command -v node &> /dev/null && echo -e "${BLUE}   * Node.js: $(node --version)${NC}"
+    command -v npm &> /dev/null && echo -e "${BLUE}   * npm: v$(npm --version)${NC}"
+    command -v docker &> /dev/null && echo -e "${BLUE}   * Docker: $(docker --version | sed 's/Docker version //' | sed 's/,.*//')${NC}"
+    command -v git &> /dev/null && echo -e "${BLUE}   * Git: $(git --version | sed 's/git version //')${NC}"
 }
 
 # Основная функция с параметрами
@@ -340,29 +343,42 @@ main() {
             check_all_dependencies
             ;;
         "--system")
+            show_logo
+            echo
             check_system_dependencies
             ;;
         "--docker")
+            show_logo
+            echo
             check_docker_environment
             ;;
         "--npm")
+            show_logo
+            echo
             check_npm_dependencies
             ;;
         "--ports")
+            show_logo
+            echo
             check_ports
             ;;
         "--fix")
+            show_logo
+            echo
             auto_fix_dependencies
             ;;
         "--info")
+            show_logo
+            echo
             show_system_info
             ;;
         "--help"|"-h")
-            echo "🔍 ZeroEnhanced Dependencies Checker"
+            show_logo
+            echo
             echo "Использование: $0 [команда]"
             echo ""
             echo "Команды:"
-            echo "  check    - Полная проверка всех зависимостей (по умолчанию)"
+            echo "  check    - Полная проверка зависимостей (по умолчанию)"
             echo "  --system - Проверка только системных зависимостей"
             echo "  --docker - Проверка только Docker окружения"
             echo "  --npm    - Проверка только npm зависимостей"
