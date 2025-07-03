@@ -46,7 +46,7 @@ function Test-NodeJS {
         $version = node --version 2>$null
         if ($version) {
             Write-LogSuccess "Node.js найден: $version"
-            return $true
+                    return $true
         } else {
             Write-LogError "Node.js не найден"
             return $false
@@ -65,8 +65,8 @@ function Test-Npm {
         $version = npm --version 2>$null
         if ($version) {
             Write-LogSuccess "npm найден: v$version"
-            return $true
-        } else {
+                return $true
+            } else {
             Write-LogError "npm не найден"
             return $false
         }
@@ -205,18 +205,18 @@ function Start-Installation {
     if (-not (Install-BackendDependencies)) {
         exit 1
     }
-    Write-Host ""
+        Write-Host ""
     
     if (-not (Install-DesktopDependencies)) {
         exit 1
     }
-    Write-Host ""
+        Write-Host ""
     
     Write-LogSuccess "Установка зависимостей завершена"
     
     # Проверка финального состояния
     Write-LogStep "Финальная проверка"
-    Write-Host ""
+        Write-Host ""
     
     if (Test-Path "node_modules") {
         Write-LogSuccess "Основные зависимости: ОК"

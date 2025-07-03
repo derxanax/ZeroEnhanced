@@ -29,54 +29,54 @@ Set-Location (Join-Path $scriptPath "..")
 # Build Backend
 function Build-Backend {
     Write-LogStep "Сборка backend"
-    Set-Location backend
-    try {
+Set-Location backend
+try {
         if (Get-Content package.json | Select-String "build") {
             Write-LogInfo "Запускаю npm run build"
-            npm run build --silent
+    npm run build --silent
             Write-LogSuccess "Backend собран успешно"
         } else {
             Write-LogWarning "Backend build script не настроен, пропускаю"
         }
-    } catch {
+} catch {
         Write-LogError "Ошибка сборки backend"
-    }
-    Set-Location ..
+}
+Set-Location ..
 }
 
 # Build Desktop React App
 function Build-ReactApp {
     Write-LogStep "Сборка React приложения"
-    Set-Location desktop/react-src
+Set-Location desktop/react-src
     
     Write-LogInfo "Запускаю npm run build"
-    npm run build --silent
+npm run build --silent
     Write-LogSuccess "React приложение собрано"
-    
+
     Set-Location ..
     Write-LogInfo "Копирую сборку в desktop/www"
-    if (!(Test-Path "www")) { New-Item -ItemType Directory -Name "www" }
-    try {
-        Copy-Item -Path "react-src/build/*" -Destination "www/" -Recurse -Force
+if (!(Test-Path "www")) { New-Item -ItemType Directory -Name "www" }
+try {
+    Copy-Item -Path "react-src/build/*" -Destination "www/" -Recurse -Force
         Write-LogSuccess "Файлы скопированы в desktop/www/"
-    } catch {
+} catch {
         Write-LogWarning "Не удалось скопировать build файлы"
-    }
-    Set-Location ..
+}
+Set-Location ..
 }
 
 # Build CLI
 function Build-CLI {
     Write-LogStep "Сборка CLI компонентов"
-    Set-Location src
-    try {
+Set-Location src
+try {
         Write-LogInfo "Компилирую TypeScript"
-        npx tsc
+    npx tsc
         Write-LogSuccess "CLI компоненты собраны"
-    } catch {
+} catch {
         Write-LogWarning "CLI TypeScript сборка не настроена"
-    }
-    Set-Location ..
+}
+Set-Location ..
 }
 
 # Показать результаты
@@ -104,11 +104,11 @@ function Main {
     Build-ReactApp
     Build-CLI
     
-    Write-Host ""
+Write-Host ""
     Write-Host "══════════════════════════════════════════════════=" -ForegroundColor Blue
     Write-LogSuccess "Сборка завершена успешно"
     Show-BuildResults
-    Write-Host ""
+Write-Host "" 
 }
 
 # Запуск

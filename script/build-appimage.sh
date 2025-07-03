@@ -273,7 +273,7 @@ Categories=Development;Utility;
 Terminal=false
 StartupNotify=true
 EOF
-    
+
     # Проверка .desktop файла
     if desktop-file-validate "$APPDIR/usr/share/applications/${APP_NAME,,}.desktop"; then
         log_success ".desktop файл создан и валиден"

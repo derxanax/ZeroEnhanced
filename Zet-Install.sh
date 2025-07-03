@@ -82,9 +82,9 @@ show_menu() {
 # Выполнить действие
 execute_action() {
     local choice="$1"
-    
-    case $choice in
-        1)
+        
+        case $choice in
+            1)
             log_step "Проверка системных зависимостей"
             ./script/check-dependencies.sh --system
             ;;
@@ -127,12 +127,12 @@ execute_action() {
         0)
             echo
             log_success "До свидания!"
-            exit 0
-            ;;
-        *)
-            log_error "Неверный выбор: $choice"
-            ;;
-    esac
+                exit 0
+                ;;
+            *)
+                log_error "Неверный выбор: $choice"
+                ;;
+        esac
 }
 
 # Основной цикл

@@ -25,7 +25,7 @@ function Show-Loading {
 # Красивый логотип
 function Show-Logo {
     Clear-Host
-    Write-Host @"
+Write-Host @"
 ██████╗ ███████╗████████╗     ██████╗ ██╗   ██╗██╗
 ╚════██╗██╔════╝╚══██╔══╝    ██╔════╝ ██║   ██║██║
  █████╔╝█████╗     ██║       ██║  ███╗██║   ██║██║
@@ -150,9 +150,9 @@ function Start-MainLoop {
         Write-Host ""
         Write-Host "Нажмите Enter для продолжения..." -ForegroundColor Blue
         Read-Host | Out-Null
+        }
     }
-}
-
+    
 # Проверка что скрипт запущен из правильной директории
 function Test-Directory {
     if (-not (Test-Path "package.json") -or -not (Test-Path "script")) {

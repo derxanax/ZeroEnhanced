@@ -178,11 +178,11 @@ install_docker() {
             sudo apt-get install -y ca-certificates curl gnupg lsb-release
             
             curl -fsSL https://download.docker.com/linux/$DISTRO/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-            
+        
             echo \
               "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/$DISTRO \
               $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-            
+        
             sudo apt-get update
             sudo apt-get install -y docker-ce docker-ce-cli containerd.io
             ;;
@@ -329,7 +329,7 @@ main() {
     if [ "$EUID" -eq 0 ]; then
         log_error "Не запускайте скрипт от имени root"
         log_info "Скрипт сам запросит sudo когда необходимо"
-        exit 1
+            exit 1
     fi
     
     # Определение системы
@@ -347,7 +347,7 @@ main() {
     
     if ! install_nodejs; then
         log_error "Ошибка установки Node.js"
-        exit 1
+            exit 1
     fi
     echo
     

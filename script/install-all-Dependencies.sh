@@ -79,7 +79,7 @@ check_npm() {
 # Установка зависимостей для основного проекта
 install_main_dependencies() {
     log_step "Установка зависимостей основного проекта"
-    
+        
     if [ ! -f "package.json" ]; then
         log_error "package.json не найден в корневой директории"
         return 1
@@ -89,10 +89,10 @@ install_main_dependencies() {
     
     if npm install; then
         log_success "Зависимости основного проекта установлены"
-    else
+            else
         log_error "Ошибка установки зависимостей основного проекта"
-        return 1
-    fi
+                return 1
+            fi
 }
 
 # Установка зависимостей для backend
@@ -152,9 +152,9 @@ install_typescript() {
         
         if npm install -g typescript; then
             log_success "TypeScript установлен"
-        else
+    else
             log_error "Ошибка установки TypeScript"
-            return 1
+        return 1
         fi
     fi
 }

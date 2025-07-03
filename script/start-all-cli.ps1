@@ -55,7 +55,7 @@ function Show-Logo {
     Write-Host "CLI Terminal Launcher" -ForegroundColor Blue
     Write-Host "══════════════════════════════════════════════════=" -ForegroundColor Blue
     Write-Host ""
-}
+                }
 
 # Проверка зависимостей
 function Test-Dependencies {
@@ -144,8 +144,8 @@ function Build-Project {
     } else {
         Write-LogWarning "tsconfig.json не найден - пропускаю сборку"
         return $true
+        }
     }
-}
 
 # Запуск CLI приложения
 function Start-CliApp {
@@ -161,7 +161,7 @@ function Start-CliApp {
         node "dist/main.js"
     } elseif (Test-Path "src/main.ts") {
         Write-LogInfo "Запускаю через ts-node"
-        
+    
         # Проверяем ts-node
         try {
             $tsNodeVersion = ts-node --version 2>$null
@@ -176,9 +176,9 @@ function Start-CliApp {
             } catch {
                 Write-LogError "Не удалось установить ts-node"
                 return $false
-            }
         }
-        
+    }
+    
         Show-Loading "Инициализация терминала" 1
         Write-Host ""
         Write-LogSuccess "Zet CLI готов к работе!"
@@ -206,11 +206,11 @@ function Test-Environment {
                 Write-LogInfo "Режим: Production"
             } else {
                 Write-LogInfo "Режим: Development"
-            }
-            
+    }
+    
             if ($config.domain) {
                 Write-LogInfo "API сервер: $($config.domain)"
-            }
+}
         } catch {
             Write-LogWarning "Ошибка чтения конфигурации Prod.json"
         }

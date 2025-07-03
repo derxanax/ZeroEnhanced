@@ -91,10 +91,10 @@ check_dockerfile() {
 # Создание Dockerfile
 create_dockerfile() {
     log_step "Создание Dockerfile"
-    
-    mkdir -p "$(dirname "$DOCKERFILE_PATH")"
-    
-    cat > "$DOCKERFILE_PATH" << 'EOF'
+        
+        mkdir -p "$(dirname "$DOCKERFILE_PATH")"
+        
+        cat > "$DOCKERFILE_PATH" << 'EOF'
 # ZetGui Sandbox Container
 FROM ubuntu:22.04
 
@@ -124,8 +124,8 @@ USER sandbox
 # Команда по умолчанию
 CMD ["bash"]
 EOF
-    
-    log_success "Dockerfile создан: $DOCKERFILE_PATH"
+        
+        log_success "Dockerfile создан: $DOCKERFILE_PATH"
 }
 
 # Сборка Docker образа
@@ -168,12 +168,12 @@ create_container() {
             "exited")
                 log_info "Запускаю остановленный контейнер"
                 if docker start "$DOCKER_CONTAINER_NAME"; then
-                    log_success "Контейнер запущен"
-                    return 0
-                else
-                    log_error "Не удалось запустить контейнер"
-                    return 1
-                fi
+            log_success "Контейнер запущен"
+            return 0
+        else
+            log_error "Не удалось запустить контейнер"
+            return 1
+        fi
                 ;;
             *)
                 log_warning "Контейнер в состоянии: $status"
@@ -291,7 +291,7 @@ show_container_info() {
     
     local sandbox_path=$(realpath sandbox 2>/dev/null)
     log_info "Sandbox: $sandbox_path"
-    
+        
     echo
     log_info "Команды для работы:"
     echo -e "  ${BLUE}Войти в контейнер:${NC} docker exec -it $DOCKER_CONTAINER_NAME bash"
@@ -310,16 +310,16 @@ main() {
     # Проверки
     if ! check_docker; then
         exit 1
-    fi
-    echo
-    
+                fi
+                echo
+            
     check_dockerfile
     echo
-    
+            
     # Сборка и создание
     if ! build_image; then
-        exit 1
-    fi
+                exit 1
+            fi
     echo
     
     create_sandbox_directory
@@ -338,8 +338,8 @@ main() {
     fi
     echo
     
-    show_container_info
-    echo
+                            show_container_info
+                            echo
     
     log_success "Docker окружение готово к работе!"
 }
@@ -349,8 +349,8 @@ check_directory() {
     if [ ! -f "package.json" ]; then
         log_error "Скрипт должен запускаться из корневой директории проекта"
         log_info "Перейдите в директорию с package.json"
-        exit 1
-    fi
+                        exit 1
+                    fi
 }
 
 # Обработка аргументов
@@ -373,8 +373,8 @@ case "${1:-}" in
         echo "  --clean, -c      Удалить контейнер и образ"
         echo "  --help, -h       Показать эту справку"
         exit 0
-        ;;
-esac
+            ;;
+    esac
 
 # Обработка Ctrl+C
 trap 'echo; log_info "Прерывание настройки"; exit 0' INT

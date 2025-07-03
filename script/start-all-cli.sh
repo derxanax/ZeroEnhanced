@@ -129,8 +129,8 @@ start_cli() {
             log_warning "ts-node не найден, устанавливаю"
             if ! npm install -g ts-node; then
                 log_error "Не удалось установить ts-node"
-                return 1
-            fi
+        return 1
+    fi
         fi
         
         show_loading "Инициализация терминала" 1
