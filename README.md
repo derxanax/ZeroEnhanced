@@ -1,4 +1,5 @@
-<div align="center">
+проект времено заморожен, информация будет позже, ожидайте новый ии тулз от одноименого разрабочика derxanax <div align="center">
+
   <img src="asset/ZET.png" alt="Zet Logo" width="700"/>
   
 
